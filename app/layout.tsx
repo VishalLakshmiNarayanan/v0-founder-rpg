@@ -1,14 +1,21 @@
 import type { Metadata } from 'next'
-import { Geist, Geist_Mono } from 'next/font/google'
+import { Playfair_Display, JetBrains_Mono } from 'next/font/google'
 import { Analytics } from '@vercel/analytics/next'
 import './globals.css'
 
-const _geist = Geist({ subsets: ["latin"] });
-const _geistMono = Geist_Mono({ subsets: ["latin"] });
+const playfair = Playfair_Display({ 
+  subsets: ["latin"],
+  variable: '--font-playfair',
+})
+
+const jetbrains = JetBrains_Mono({ 
+  subsets: ["latin"],
+  variable: '--font-jetbrains',
+})
 
 export const metadata: Metadata = {
-  title: 'v0 App',
-  description: 'Created with v0',
+  title: 'The Shadow Committee',
+  description: 'A Founder RPG to stress-test your business judgment',
   generator: 'v0.app',
   icons: {
     icon: [
@@ -35,8 +42,8 @@ export default function RootLayout({
   children: React.ReactNode
 }>) {
   return (
-    <html lang="en">
-      <body className="font-sans antialiased">
+    <html lang="en" className={`${playfair.variable} ${jetbrains.variable}`}>
+      <body className="font-serif antialiased bg-[#001E44] text-[#E2E8F0] overflow-hidden">
         {children}
         <Analytics />
       </body>
