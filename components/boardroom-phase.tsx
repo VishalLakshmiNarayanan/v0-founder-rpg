@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { motion } from 'framer-motion'
 import { Judge } from './judge'
 import { DialogueHUD } from './dialogue-hud'
@@ -161,13 +161,54 @@ export function BoardroomPhase({
 
   const [displayedText, setDisplayedText] = useState('')
   const [isDialogueComplete, setIsDialogueComplete] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
 
-  // Typewriter effect lifted from old DialogueHUD
+  const speakDialogue = useCallback(async (text: string, judgeIndex: number) => {
+    // Premium ElevenLabs Voice ID Mapping
+    const voiceIds = [
+      'EXAVITQu4vr4xnSDxMaL', // Persona 0: Sarah (Soft, Professional Female)
+      'JBFqnCBsd6RMkjVDRZzb', // Persona 1: George (Deep, Steady Male - from docs example)
+      'TX3LPaxmHKxFdv7VOQHJ', // Persona 2: Liam (Articulate, Young Male)
+    ]
+    const selectedVoiceId = voiceIds[judgeIndex] || voiceIds[0]
+
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, voiceId: selectedVoiceId })
+      })
+
+      if (!response.ok) {
+        throw new Error('TTS API failed to return stream buffer. Did you configure the ELEVENLABS_API_KEY?')
+      }
+
+      const audioBlob = await response.blob()
+      const audioUrl = URL.createObjectURL(audioBlob)
+
+      if (audioRef.current) {
+        audioRef.current.pause()
+        audioRef.current.src = audioUrl
+        audioRef.current.play()
+      } else {
+        const audio = new Audio(audioUrl)
+        audio.play()
+        audioRef.current = audio
+      }
+    } catch (err) {
+      console.error("ElevenLabs TTS Streaming Error:", err)
+    }
+  }, [])
+
+  // Typewriter effect & Voice Trigger
   useEffect(() => {
     setDisplayedText('')
     setIsDialogueComplete(false)
     
     if (!currentDialogue) return
+
+    // Trigger explicit TTS play!
+    speakDialogue(currentDialogue, activeJudge)
 
     let index = 0
     const interval = setInterval(() => {
@@ -181,7 +222,7 @@ export function BoardroomPhase({
     }, 30)
 
     return () => clearInterval(interval)
-  }, [currentDialogue])
+  }, [currentDialogue, activeJudge, speakDialogue])
 
   const judgePositions = [
     { left: '10%', bottom: '22%', zIndex: 10 }, 
@@ -224,6 +265,7 @@ export function BoardroomPhase({
               confidence={confidences[index]}
               previousConfidence={previousConfidences[index]}
               dialogue={activeJudge === index ? displayedText : null}
+              personaPrompt={judge.evaluationPrompt || judge.prompt}
             />
           </div>
         ))}
