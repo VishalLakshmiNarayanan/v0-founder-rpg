@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { AnimatePresence } from 'framer-motion'
 import { BriefingPhase } from '@/components/briefing-phase'
 import { TransitionPhase } from '@/components/transition-phase'
@@ -13,13 +13,41 @@ export default function ShadowCommittee() {
   const [phase, setPhase] = useState<GamePhase>('briefing')
   const [confidence, setConfidence] = useState(50)
   const [finalScore, setFinalScore] = useState(50)
+  const [gameData, setGameData] = useState<{ personas: any[], questions: any[], context: string } | null>(null)
+  const [isTransitionComplete, setIsTransitionComplete] = useState(false)
 
-  const handleInitialize = useCallback((file: File | null, context: string) => {
+  useEffect(() => {
+    if (phase === 'transition' && gameData && isTransitionComplete) {
+      setPhase('boardroom')
+    }
+  }, [phase, gameData, isTransitionComplete])
+
+  const handleInitialize = useCallback(async (file: File | null, context: string) => {
     setPhase('transition')
+    setIsTransitionComplete(false)
+    setGameData(null)
+
+    try {
+      const formData = new FormData()
+      if (file) formData.append('file', file)
+      formData.append('context', context)
+
+      const res = await fetch('/api/briefing', { method: 'POST', body: formData })
+      const result = await res.json()
+      if (result.success && result.data) {
+        setGameData({
+          personas: result.data.personas,
+          questions: result.data.questions,
+          context
+        })
+      }
+    } catch (e) {
+      console.error(e)
+    }
   }, [])
 
   const handleTransitionComplete = useCallback(() => {
-    setPhase('boardroom')
+    setIsTransitionComplete(true)
   }, [])
 
   const handleConfidenceChange = useCallback((score: number) => {
@@ -60,6 +88,7 @@ export default function ShadowCommittee() {
             initialConfidence={confidence}
             onConfidenceChange={handleConfidenceChange}
             onGameEnd={handleGameEnd}
+            gameData={gameData}
           />
         )}
         

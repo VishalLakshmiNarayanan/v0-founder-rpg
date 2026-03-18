@@ -7,30 +7,18 @@ import { ConfidenceMeter } from './confidence-meter'
 import { DialogueHUD } from './dialogue-hud'
 import type { JudgeEmotion } from '@/hooks/use-game-state'
 
-const judges = [
-  { name: 'Victoria Chen', role: 'Strategic Ops' },
-  { name: 'Marcus Wei', role: 'Market Analysis' },
-  { name: 'Richard Sterling', role: 'Financial Review' },
-]
-
-const sampleDialogues = [
-  { judge: 1, text: "Your market positioning is intriguing, but I need to understand your competitive moat. What prevents a well-funded competitor from replicating your approach within 18 months?" },
-  { judge: 0, text: "I've reviewed your financial projections. Your customer acquisition cost seems optimistic. Walk me through your unit economics assumptions." },
-  { judge: 2, text: "The team composition concerns me. I see strong technical talent, but where's your go-to-market expertise? How do you plan to bridge that gap?" },
-  { judge: 1, text: "Your Series A valuation asks for a significant premium. Convince me why this isn't just another B2B SaaS play with a fancy AI wrapper." },
-  { judge: 0, text: "Let's talk about your runway. With current burn rate and this raise, you're looking at 18 months. What milestones must you hit to ensure Series B?" },
-]
-
 interface BoardroomPhaseProps {
   initialConfidence: number
   onConfidenceChange: (score: number) => void
   onGameEnd: (finalScore: number) => void
+  gameData: { personas: any[], questions: any[], context: string } | null
 }
 
 export function BoardroomPhase({ 
   initialConfidence, 
   onConfidenceChange,
-  onGameEnd 
+  onGameEnd,
+  gameData
 }: BoardroomPhaseProps) {
   const [confidence, setConfidence] = useState(initialConfidence)
   const [previousConfidence, setPreviousConfidence] = useState(initialConfidence)
@@ -40,74 +28,84 @@ export function BoardroomPhase({
   const [currentDialogue, setCurrentDialogue] = useState('')
   const [turnCount, setTurnCount] = useState(0)
 
+  const [isEvaluating, setIsEvaluating] = useState(false)
+
+  const judges = gameData?.personas || [
+    { name: 'Loading...', role: '...' },
+    { name: 'Loading...', role: '...' },
+    { name: 'Loading...', role: '...' }
+  ]
+  const dialogues = gameData?.questions || []
+
   useEffect(() => {
-    // Initialize first dialogue
-    const firstDialogue = sampleDialogues[0]
-    setActiveJudge(firstDialogue.judge)
-    setCurrentDialogue(firstDialogue.text)
-  }, [])
-
-  const handleResponse = useCallback((response: string) => {
-    // Simple scoring based on response length and keywords
-    const positiveKeywords = ['growth', 'scale', 'market', 'revenue', 'team', 'data', 'advantage', 'unique', 'proven', 'traction']
-    const negativeKeywords = ['maybe', 'hope', 'think', 'probably', 'soon', 'eventually', 'working on']
-    
-    let scoreDelta = 0
-    const lowerResponse = response.toLowerCase()
-    
-    positiveKeywords.forEach(keyword => {
-      if (lowerResponse.includes(keyword)) scoreDelta += 3
-    })
-    
-    negativeKeywords.forEach(keyword => {
-      if (lowerResponse.includes(keyword)) scoreDelta -= 2
-    })
-    
-    // Bonus for detailed responses
-    if (response.length > 100) scoreDelta += 5
-    if (response.length > 200) scoreDelta += 5
-    
-    // Random factor
-    scoreDelta += Math.floor(Math.random() * 10) - 5
-    
-    // Update confidence
-    setPreviousConfidence(confidence)
-    const newConfidence = Math.max(0, Math.min(100, confidence + scoreDelta))
-    setConfidence(newConfidence)
-    onConfidenceChange(newConfidence)
-
-    // Update emotions based on score change
-    const newEmotions: [JudgeEmotion, JudgeEmotion, JudgeEmotion] = [...emotions]
-    if (scoreDelta > 5) {
-      newEmotions[activeJudge] = 'smile'
-    } else if (scoreDelta < -3) {
-      newEmotions[activeJudge] = 'worse'
-    } else {
-      newEmotions[activeJudge] = 'neutral'
+    if (dialogues.length > 0) {
+      const firstDialogue = dialogues[0]
+      setActiveJudge(firstDialogue.judge)
+      setCurrentDialogue(firstDialogue.text)
     }
-    setEmotions(newEmotions)
+  }, [dialogues])
 
-    // Progress to next turn
-    const nextTurn = turnCount + 1
-    setTurnCount(nextTurn)
+  const handleResponse = useCallback(async (response: string) => {
+    if (isEvaluating || dialogues.length === 0) return;
+    setIsEvaluating(true);
 
-    // Check for game end
-    if (nextTurn >= sampleDialogues.length || newConfidence <= 10 || newConfidence >= 90) {
-      setTimeout(() => onGameEnd(newConfidence), 1500)
-      return
+    try {
+      const currentJudge = judges[activeJudge];
+      const res = await fetch('/api/answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          answer: response,
+          question: currentDialogue,
+          context: gameData?.context || '',
+          judgeName: currentJudge.name,
+          judgeRole: currentJudge.role
+        })
+      });
+
+      const result = await res.json();
+      const scoreDelta = result?.data?.scoreDelta || 0;
+      let emotion = result?.data?.emotion || 'neutral';
+      if (!['smile', 'neutral', 'worse'].includes(emotion)) emotion = 'neutral';
+
+      // Update confidence
+      setPreviousConfidence(confidence)
+      const newConfidence = Math.max(0, Math.min(100, confidence + scoreDelta))
+      setConfidence(newConfidence)
+      onConfidenceChange(newConfidence)
+
+      // Update emotions
+      const newEmotions: [JudgeEmotion, JudgeEmotion, JudgeEmotion] = [...emotions]
+      newEmotions[activeJudge] = emotion as JudgeEmotion
+      setEmotions(newEmotions)
+
+      // Progress to next turn
+      const nextTurn = turnCount + 1
+      setTurnCount(nextTurn)
+
+      // Check for game end
+      if (nextTurn >= dialogues.length || newConfidence <= 10 || newConfidence >= 90) {
+        setTimeout(() => onGameEnd(newConfidence), 1500)
+        return
+      }
+
+      // Next dialogue after delay
+      setTimeout(() => {
+        const nextDialogue = dialogues[nextTurn]
+        setActiveJudge(nextDialogue.judge)
+        setCurrentDialogue(nextDialogue.text)
+        setDialogueIndex(nextTurn)
+        
+        // Reset emotions to neutral
+        setEmotions(['neutral', 'neutral', 'neutral'])
+        setIsEvaluating(false);
+      }, 3000)
+
+    } catch (e) {
+      console.error(e);
+      setIsEvaluating(false);
     }
-
-    // Next dialogue after delay
-    setTimeout(() => {
-      const nextDialogue = sampleDialogues[nextTurn]
-      setActiveJudge(nextDialogue.judge)
-      setCurrentDialogue(nextDialogue.text)
-      setDialogueIndex(nextTurn)
-      
-      // Reset other judges to neutral
-      setEmotions(['neutral', 'neutral', 'neutral'])
-    }, 1000)
-  }, [confidence, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd])
+  }, [confidence, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd, currentDialogue, gameData, isEvaluating, dialogues, judges])
 
   return (
     <motion.div
@@ -166,7 +164,7 @@ export function BoardroomPhase({
       <div className="absolute top-4 right-4 z-30">
         <div className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30">
           <span className="font-mono text-xs text-[#A0AEC0]">
-            QUESTION {turnCount + 1}/{sampleDialogues.length}
+            QUESTION {turnCount + 1}/{Math.max(1, dialogues.length)}
           </span>
         </div>
       </div>
