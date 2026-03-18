@@ -158,7 +158,7 @@ export function BriefingPhase({ onInitialize }: BriefingPhaseProps) {
             </motion.button>
 
             {/* Footer */}
-            <p className="text-center font-mono text-xs text-[#4A5568] mt-6">
+            <p className="text-center font-mono text-xs text-[#718096] mt-6">
               Encrypted connection established
             </p>
           </div>

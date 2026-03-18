@@ -478,6 +478,9 @@ export function BoardroomPhase({
     return () => clearInterval(interval)
   }, [currentDialogue, activeJudge, speakDialogue])
 
+  // ── Concerns tooltip ──────────────────────────────────────────────────────
+  const [showConcernsTooltip, setShowConcernsTooltip] = useState(false)
+
   // ── Derived display values ─────────────────────────────────────────────────
   const doneConcerns = personaConcerns.flat().filter(c => c.covered || c.resolved).length
   const totalConcerns = personaConcerns.flat().length
@@ -537,10 +540,51 @@ export function BoardroomPhase({
 
       {/* Turn + concern progress indicator */}
       <div className="absolute top-4 right-4 z-30">
-        <div className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30">
-          <span className="font-mono text-xs text-[#A0AEC0]">
-            Q {turnCount + 1}/{MAX_TURNS}&nbsp;&nbsp;|&nbsp;&nbsp;{doneConcerns}/{totalConcerns} CONCERNS
+        <div className="glass rounded-lg px-4 py-2 border border-[#FFC627]/20 flex items-center gap-3">
+          <span className="font-mono text-xs text-[#E2E8F0]">
+            Q {turnCount + 1}/{MAX_TURNS}
           </span>
+          <span className="text-[#FFC627]/30 font-mono">|</span>
+          {/* Concerns badge with tooltip */}
+          <div
+            className="relative"
+            onMouseEnter={() => setShowConcernsTooltip(true)}
+            onMouseLeave={() => setShowConcernsTooltip(false)}
+          >
+            <span className="font-mono text-xs text-[#E2E8F0] cursor-help border-b border-dashed border-[#E2E8F0]/40 pb-px">
+              {doneConcerns}/{totalConcerns} CONCERNS
+            </span>
+            {showConcernsTooltip && (
+              <div className="absolute top-full right-0 mt-2 w-72 bg-[#0a1628]/97 backdrop-blur-xl rounded-xl border border-[#FFC627]/30 shadow-2xl shadow-black/60 z-50 overflow-hidden">
+                <div className="px-3 py-2 border-b border-[#FFC627]/20 bg-linear-to-r from-[#FFC627]/10 to-transparent">
+                  <span className="font-mono text-[10px] text-[#FFC627] uppercase tracking-wider">Board Concerns</span>
+                </div>
+                <div className="p-3 space-y-3 max-h-64 overflow-y-auto">
+                  {personaConcerns.map((concerns, pIdx) =>
+                    concerns.length > 0 ? (
+                      <div key={pIdx}>
+                        <p className="font-mono text-[10px] text-[#FFC627]/80 uppercase tracking-wider mb-1.5">
+                          {judges[pIdx]?.name || `Judge ${pIdx + 1}`}
+                        </p>
+                        <ul className="space-y-1.5">
+                          {concerns.map((c, cIdx) => (
+                            <li key={cIdx} className="flex items-start gap-2">
+                              <span className={`text-[11px] mt-px shrink-0 font-bold ${c.resolved ? 'text-emerald-400' : c.covered ? 'text-amber-400' : 'text-[#718096]'}`}>
+                                {c.resolved ? '✓' : c.covered ? '◑' : '○'}
+                              </span>
+                              <span className={`font-mono text-[11px] leading-relaxed ${c.resolved ? 'text-emerald-400/70 line-through' : c.covered ? 'text-amber-400/80' : 'text-[#CBD5E0]'}`}>
+                                {c.text}
+                              </span>
+                            </li>
+                          ))}
+                        </ul>
+                      </div>
+                    ) : null
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 
@@ -559,7 +603,7 @@ export function BoardroomPhase({
             })
           }}
           disabled={isEvaluating}
-          className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30 font-mono text-xs text-[#A0AEC0] hover:border-red-500/50 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          className="glass rounded-lg px-4 py-2 border border-[#FFC627]/20 font-mono text-xs text-[#A0AEC0] hover:border-red-500/50 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
         >
           END DISCUSSION
         </button>

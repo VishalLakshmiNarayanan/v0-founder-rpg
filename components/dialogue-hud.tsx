@@ -99,12 +99,12 @@ export function DialogueHUD({ onRespond, isEvaluating = false, canRespond = true
     }
   }
 
-  const displayValue = (userInput + (interimText ? ' ' + interimText : '')).trim()
+  const displayValue = userInput + (interimText ? ' ' + interimText : '')
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (displayValue && canRespond && !isEvaluating) {
-      onRespond(displayValue)
+    if (displayValue.trim() && canRespond && !isEvaluating) {
+      onRespond(displayValue.trim())
       setUserInput('')
       setInterimText('')
       if (isListening && recognitionRef.current) {
@@ -122,7 +122,7 @@ export function DialogueHUD({ onRespond, isEvaluating = false, canRespond = true
       className="fixed bottom-0 left-0 right-0 z-40"
     >
       {/* Gradient fade */}
-      <div className="h-8 bg-gradient-to-t from-black/90 to-transparent" />
+      <div className="h-8 bg-linear-to-t from-black/90 to-transparent" />
       
       {/* Main HUD */}
       <div className="bg-black/90 backdrop-blur-md border-t border-[#FFC627]/20 pb-4">
@@ -131,7 +131,7 @@ export function DialogueHUD({ onRespond, isEvaluating = false, canRespond = true
           <form onSubmit={handleSubmit} className="relative">
             <div className="flex items-center gap-2 mb-3">
               <div className="w-2 h-2 rounded-full bg-[#FFC627] animate-pulse" />
-              <span className="font-mono text-xs text-[#4A5568] uppercase tracking-wider">
+              <span className="font-mono text-xs text-[#A0AEC0] uppercase tracking-wider">
                 User Terminal
               </span>
               {isEvaluating && (
@@ -174,7 +174,7 @@ export function DialogueHUD({ onRespond, isEvaluating = false, canRespond = true
                 )}
                 <motion.button
                   type="submit"
-                  disabled={!canRespond || isEvaluating || !displayValue}
+                  disabled={!canRespond || isEvaluating || !displayValue.trim()}
                   whileHover={{ scale: 1.05 }}
                   whileTap={{ scale: 0.95 }}
                   className="p-2 rounded-md bg-[#FFC627]/20 text-[#FFC627] hover:bg-[#FFC627]/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"
