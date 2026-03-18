@@ -5,28 +5,46 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(req: Request) {
   try {
-    const { answer, question, context, judgeName, judgeRole } = await req.json();
+    const { answer, question, context, judgeName, judgeRole, personaPrompt, nextJudgeName, nextJudgeRole, nextPersonaPrompt, chatHistory } = await req.json();
 
-    const prompt = `
-      You are an expert judging a response in a simulated executive briefing / boardroom pitch.
-      Meeting context: "${context}"
-      Judge (Persona): ${judgeName} - ${judgeRole}
-      Question asked by the judge: "${question}"
-      User's response: "${answer}"
-
-      Evaluate the user's response based on logic, reasoning, confidence, and relevancy to the specific question and overall context. Be harsh; this is an executive boardroom. A generic answer is bad.
-      Provide a "scoreDelta" from -10 to +10 indicating how much their confidence score changes.
-      Provide "emotion" which must be strictly one of: "smile" (for an excellent, convincing answer), "neutral" (for an okay answer), or "worse" (for a poor, terrible, or evasive answer).
-
-      Return ONLY a valid JSON object in this format:
+    const messages: any[] = [
       {
-        "scoreDelta": 5,
-        "emotion": "smile"
-      }
-    `;
+        role: 'system',
+        content: `You are orchestrating an executive boardroom simulation.
+Meeting Context:
+"${context}"
+
+CURRENT EVALUATOR:
+You must embody ${judgeName} (${judgeRole}).
+Their strict evaluation rules/domain limits:
+"""
+${personaPrompt}
+"""
+As the evaluator, assess the Founder's MOST RECENT response to the history. React purely from this persona's viewpoint. Determine a "scoreDelta" from -10 to +10, and an "emotion" ("smile", "neutral", or "worse").
+
+NEXT INTERROGATOR:
+After evaluating, you must immediately shift to embodying ${nextJudgeName} (${nextJudgeRole}).
+Their instructions/domain limits:
+"""
+${nextPersonaPrompt}
+"""
+Based on the full conversation history, generate the NEXT question in the round-robin natively from this persona's perspective. It should drill into vulnerabilities or push the conversation forward based on what the Founder just said. Provide this as "nextQuestion".
+
+You MUST output ONLY valid JSON in this exact format:
+{
+  "scoreDelta": 5,
+  "emotion": "smile",
+  "nextQuestion": "..."
+}`
+      },
+      ...chatHistory.map((msg: any) => ({
+        role: msg.role === 'Founder' ? 'user' : 'assistant',
+        content: msg.role === 'Founder' ? msg.content : `[Action by ${msg.role}] asked: ${msg.content}`
+      }))
+    ];
 
     const chatCompletion = await groq.chat.completions.create({
-      messages: [{ role: 'user', content: prompt }],
+      messages: messages,
       model: 'llama-3.1-8b-instant',
       response_format: { type: 'json_object' }
     });

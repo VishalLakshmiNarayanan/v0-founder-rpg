@@ -13,7 +13,8 @@ export default function ShadowCommittee() {
   const [phase, setPhase] = useState<GamePhase>('briefing')
   const [confidence, setConfidence] = useState(50)
   const [finalScore, setFinalScore] = useState(50)
-  const [gameData, setGameData] = useState<{ personas: any[], questions: any[], context: string } | null>(null)
+  const [reportData, setReportData] = useState<any>(null)
+  const [gameData, setGameData] = useState<{ personas: any[], questions: any[], context: string, outcomes?: any } | null>(null)
   const [isTransitionComplete, setIsTransitionComplete] = useState(false)
 
   useEffect(() => {
@@ -26,6 +27,7 @@ export default function ShadowCommittee() {
     setPhase('transition')
     setIsTransitionComplete(false)
     setGameData(null)
+    setReportData(null)
 
     try {
       const formData = new FormData()
@@ -38,6 +40,7 @@ export default function ShadowCommittee() {
         setGameData({
           personas: result.data.personas,
           questions: result.data.questions,
+          outcomes: result.data.outcomes,
           context
         })
       }
@@ -54,8 +57,9 @@ export default function ShadowCommittee() {
     setConfidence(score)
   }, [])
 
-  const handleGameEnd = useCallback((score: number) => {
+  const handleGameEnd = useCallback((score: number, report: any) => {
     setFinalScore(score)
+    setReportData(report)
     setPhase('results')
   }, [])
 
@@ -97,6 +101,8 @@ export default function ShadowCommittee() {
             key="results"
             finalScore={finalScore}
             onRestart={handleRestart}
+            outcomes={gameData?.outcomes}
+            reportData={reportData}
           />
         )}
       </AnimatePresence>

@@ -9,7 +9,7 @@ import type { JudgeEmotion } from '@/hooks/use-game-state'
 interface BoardroomPhaseProps {
   initialConfidence: number
   onConfidenceChange: (score: number) => void
-  onGameEnd: (finalScore: number) => void
+  onGameEnd: (finalScore: number, reportData: any) => void
   gameData: { personas: any[], questions: any[], context: string } | null
 }
 
@@ -19,21 +19,39 @@ export function BoardroomPhase({
   onGameEnd,
   gameData
 }: BoardroomPhaseProps) {
-  const [confidences, setConfidences] = useState([initialConfidence, initialConfidence, initialConfidence])
-  const [previousConfidences, setPreviousConfidences] = useState([initialConfidence, initialConfidence, initialConfidence])
-  const [activeJudge, setActiveJudge] = useState(1)
-  const [emotions, setEmotions] = useState<[JudgeEmotion, JudgeEmotion, JudgeEmotion]>(['neutral', 'neutral', 'neutral'])
-  const [dialogueIndex, setDialogueIndex] = useState(0)
-  const [currentDialogue, setCurrentDialogue] = useState('')
-  const [turnCount, setTurnCount] = useState(0)
-
-  const [isEvaluating, setIsEvaluating] = useState(false)
-
   const judges = gameData?.personas || [
     { name: 'Loading...', role: '...' },
     { name: 'Loading...', role: '...' },
     { name: 'Loading...', role: '...' }
-  ]
+  ];
+
+  const getInitialConfidence = (index: number) => {
+    return judges[index]?.initial_confidence !== undefined 
+      ? judges[index].initial_confidence 
+      : initialConfidence;
+  };
+
+  const [confidences, setConfidences] = useState([
+    getInitialConfidence(0), 
+    getInitialConfidence(1), 
+    getInitialConfidence(2)
+  ]);
+  const [previousConfidences, setPreviousConfidences] = useState([
+    getInitialConfidence(0), 
+    getInitialConfidence(1), 
+    getInitialConfidence(2)
+  ]);
+  const [activeJudge, setActiveJudge] = useState(1);
+  const [emotions, setEmotions] = useState<[JudgeEmotion, JudgeEmotion, JudgeEmotion]>(['neutral', 'neutral', 'neutral']);
+  const [dialogueIndex, setDialogueIndex] = useState(0)
+  const [currentDialogue, setCurrentDialogue] = useState('')
+  const [turnCount, setTurnCount] = useState(0)
+  const [chatHistory, setChatHistory] = useState<{ role: string, content: string }[]>([])
+  const MAX_TURNS = 6;
+
+  const [isEvaluating, setIsEvaluating] = useState(false)
+  const [meetingContext, setMeetingContext] = useState(gameData?.context || '')
+
   const dialogues = gameData?.questions || []
 
   useEffect(() => {
@@ -45,27 +63,40 @@ export function BoardroomPhase({
   }, [dialogues])
 
   const handleResponse = useCallback(async (response: string) => {
-    if (isEvaluating || dialogues.length === 0) return;
+    if (isEvaluating) return;
     setIsEvaluating(true);
 
     try {
       const currentJudge = judges[activeJudge];
-      const res = await fetch('/api/answer', {
+
+      const newInteraction = [
+        { role: `${currentJudge.name} (${currentJudge.role})`, content: currentDialogue },
+        { role: 'Founder', content: response }
+      ];
+      const updatedHistory = [...chatHistory, ...newInteraction];
+      setChatHistory(updatedHistory);
+
+      // STEP 1: Evaluate Answer
+      const evaluateRes = await fetch('/api/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           answer: response,
           question: currentDialogue,
-          context: gameData?.context || '',
+          context: meetingContext,
           judgeName: currentJudge.name,
-          judgeRole: currentJudge.role
+          judgeRole: currentJudge.role,
+          personaPrompt: currentJudge.evaluationPrompt,
+          chatHistory: updatedHistory
         })
       });
 
-      const result = await res.json();
-      const scoreDelta = result?.data?.scoreDelta || 0;
-      let emotion = result?.data?.emotion || 'neutral';
+      const evaluateResult = await evaluateRes.json();
+      const scoreDelta = evaluateResult?.data?.scoreDelta || 0;
+      let emotion = evaluateResult?.data?.emotion || 'neutral';
       if (!['smile', 'neutral', 'worse'].includes(emotion)) emotion = 'neutral';
+      const newContext = evaluateResult?.data?.updatedContext || meetingContext;
+      setMeetingContext(newContext);
 
       // Update confidence for active judge
       setPreviousConfidences([...confidences])
@@ -81,22 +112,41 @@ export function BoardroomPhase({
       newEmotions[activeJudge] = emotion as JudgeEmotion
       setEmotions(newEmotions)
 
-      // Progress to next turn
+      // Check for game end
       const nextTurn = turnCount + 1
       setTurnCount(nextTurn)
-
-      // Check for game end
-      if (nextTurn >= dialogues.length || avgConfidence <= 10 || avgConfidence >= 90) {
-        setTimeout(() => onGameEnd(avgConfidence), 1500)
+      if (nextTurn >= MAX_TURNS || avgConfidence <= 10 || avgConfidence >= 90) {
+        setTimeout(() => onGameEnd(avgConfidence, { chatHistory: updatedHistory, meetingContext: newContext, judges, confidences: newConfidences }), 1500)
         return
       }
 
+      // Determine next targeted judge and planned question from the initial PDF generation
+      const targetDialogue = dialogues[nextTurn];
+      const nextJudgeIndex = targetDialogue?.judge !== undefined ? targetDialogue.judge : (activeJudge + 1) % 3;
+      const nextJudge = judges[nextJudgeIndex];
+      const plannedQuestion = targetDialogue?.text || null;
+
+      // STEP 2: Generate Next Question orchestrating the proceeding persona
+      const questionRes = await fetch('/api/question', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          context: newContext,
+          judgeName: nextJudge.name,
+          judgeRole: nextJudge.role,
+          personaPrompt: nextJudge.evaluationPrompt,
+          chatHistory: updatedHistory,
+          plannedQuestion: plannedQuestion
+        })
+      });
+
+      const questionResult = await questionRes.json();
+      const nextQuestion = questionResult?.data?.question || 'Could you provide more specifics on that?';
+
       // Next dialogue after delay
       setTimeout(() => {
-        const nextDialogue = dialogues[nextTurn]
-        setActiveJudge(nextDialogue.judge)
-        setCurrentDialogue(nextDialogue.text)
-        setDialogueIndex(nextTurn)
+        setActiveJudge(nextJudgeIndex)
+        setCurrentDialogue(nextQuestion)
         
         // Reset emotions to neutral
         setEmotions(['neutral', 'neutral', 'neutral'])
@@ -107,7 +157,37 @@ export function BoardroomPhase({
       console.error(e);
       setIsEvaluating(false);
     }
-  }, [confidences, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd, currentDialogue, gameData, isEvaluating, dialogues, judges])
+  }, [confidences, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd, currentDialogue, gameData, isEvaluating, chatHistory, judges, meetingContext])
+
+  const [displayedText, setDisplayedText] = useState('')
+  const [isDialogueComplete, setIsDialogueComplete] = useState(false)
+
+  // Typewriter effect lifted from old DialogueHUD
+  useEffect(() => {
+    setDisplayedText('')
+    setIsDialogueComplete(false)
+    
+    if (!currentDialogue) return
+
+    let index = 0
+    const interval = setInterval(() => {
+      if (index < currentDialogue.length) {
+        setDisplayedText(currentDialogue.slice(0, index + 1))
+        index++
+      } else {
+        setIsDialogueComplete(true)
+        clearInterval(interval)
+      }
+    }, 30)
+
+    return () => clearInterval(interval)
+  }, [currentDialogue])
+
+  const judgePositions = [
+    { left: '10%', bottom: '22%', zIndex: 10 }, 
+    { left: '50%', transform: 'translateX(-50%)', bottom: '22%', zIndex: 5 },
+    { right: '10%', bottom: '22%', zIndex: 10 } 
+  ]
 
   return (
     <motion.div
@@ -120,21 +200,22 @@ export function BoardroomPhase({
       <div 
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
         style={{
-          backgroundImage: `url('https://hebbkx1anhila5yf.public.blob.vercel-storage.com/room-b8NCwcb8pRbXg7lhiJ1isN5D0X7znH.png')`,
+          backgroundImage: `url('/room.png')`,
         }}
       />
       
       {/* Overlay for better contrast */}
-      <div className="absolute inset-0 bg-gradient-to-b from-[#001E44]/30 via-transparent to-[#001E44]/70" />
+      <div className="absolute inset-0 bg-gradient-to-b from-[#001E44]/20 via-transparent to-black/80" />
 
-      {/* Removed Top HUD - ConfidenceMeter was here */}
-
-      {/* Judges */}
-      <div className="absolute inset-0 flex items-end justify-center pb-48 px-4">
-        <div className="flex items-end justify-center gap-4 md:gap-8 lg:gap-12">
-          {judges.map((judge, index) => (
+      {/* Judges absolutely positioned */}
+      <div className="absolute inset-0 w-full h-full pointer-events-none">
+        {judges.map((judge, index) => (
+          <div 
+            key={index} 
+            className="absolute" 
+            style={judgePositions[index]}
+          >
             <Judge
-              key={index}
               index={index}
               emotion={emotions[index]}
               isActive={activeJudge === index}
@@ -142,23 +223,24 @@ export function BoardroomPhase({
               role={judge.role}
               confidence={confidences[index]}
               previousConfidence={previousConfidences[index]}
+              dialogue={activeJudge === index ? displayedText : null}
             />
-          ))}
-        </div>
+          </div>
+        ))}
       </div>
 
-      {/* Dialogue HUD */}
+      {/* Dialogue HUD Terminal */}
       <DialogueHUD
-        dialogue={currentDialogue}
-        speakerName={judges[activeJudge]?.name || 'Committee'}
         onRespond={handleResponse}
+        isEvaluating={isEvaluating}
+        canRespond={isDialogueComplete}
       />
 
       {/* Turn indicator */}
       <div className="absolute top-4 right-4 z-30">
         <div className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30">
           <span className="font-mono text-xs text-[#A0AEC0]">
-            QUESTION {turnCount + 1}/{Math.max(1, dialogues.length)}
+            QUESTION {turnCount + 1}/{MAX_TURNS}
           </span>
         </div>
       </div>
