@@ -1,18 +1,9 @@
 "use client"
 
-import { useState, useEffect, useMemo } from 'react'
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
-const defaultMessages = [
-  'Analyzing document structure...',
-  'Identifying key arguments...',
-  'Evaluating supporting evidence...',
-  'Scanning for weaknesses...',
-  'Preparing committee questions...',
-  'The Shadow Committee is presiding.',
-]
-
-const pitchDeckMessages = [
+const scanningMessages = [
   'Analyzing market moats...',
   'Identifying cognitive biases...',
   'Evaluating competitive positioning...',
@@ -21,46 +12,13 @@ const pitchDeckMessages = [
   'The Shadow Committee is presiding.',
 ]
 
-const researchMessages = [
-  'Analyzing methodology...',
-  'Evaluating statistical rigor...',
-  'Checking citation integrity...',
-  'Identifying logical gaps...',
-  'Assessing reproducibility...',
-  'The Shadow Committee is presiding.',
-]
-
-const proposalMessages = [
-  'Analyzing feasibility...',
-  'Evaluating budget allocation...',
-  'Identifying implementation risks...',
-  'Scanning stakeholder impact...',
-  'Assessing timeline realism...',
-  'The Shadow Committee is presiding.',
-]
-
 interface TransitionPhaseProps {
   onComplete: () => void
-  documentType?: string
 }
 
-export function TransitionPhase({ onComplete, documentType }: TransitionPhaseProps) {
+export function TransitionPhase({ onComplete }: TransitionPhaseProps) {
   const [progress, setProgress] = useState(0)
   const [messageIndex, setMessageIndex] = useState(0)
-
-  const messages = useMemo(() => {
-    switch (documentType) {
-      case 'pitch_deck':
-      case 'business_plan':
-        return pitchDeckMessages
-      case 'research':
-        return researchMessages
-      case 'proposal':
-        return proposalMessages
-      default:
-        return defaultMessages
-    }
-  }, [documentType])
 
   useEffect(() => {
     const progressInterval = setInterval(() => {
@@ -75,14 +33,14 @@ export function TransitionPhase({ onComplete, documentType }: TransitionPhasePro
     }, 60)
 
     const messageInterval = setInterval(() => {
-      setMessageIndex(prev => (prev + 1) % messages.length)
+      setMessageIndex(prev => (prev + 1) % scanningMessages.length)
     }, 500)
 
     return () => {
       clearInterval(progressInterval)
       clearInterval(messageInterval)
     }
-  }, [onComplete, messages.length])
+  }, [onComplete])
 
   return (
     <motion.div
@@ -152,24 +110,10 @@ export function TransitionPhase({ onComplete, documentType }: TransitionPhasePro
               transition={{ duration: 0.2 }}
               className="font-mono text-sm text-[#A0AEC0] text-center"
             >
-              {messages[messageIndex]}
+              {scanningMessages[messageIndex]}
             </motion.p>
           </AnimatePresence>
         </div>
-
-        {/* Document type indicator */}
-        {documentType && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            transition={{ delay: 0.5 }}
-            className="mt-8 text-center"
-          >
-            <span className="font-mono text-xs text-[#FFC627]/50 uppercase tracking-wider">
-              {documentType.replace('_', ' ')} detected
-            </span>
-          </motion.div>
-        )}
 
         {/* Decorative elements */}
         <div className="absolute top-1/2 left-0 w-8 h-[1px] bg-gradient-to-r from-transparent to-[#FFC627]/30" />

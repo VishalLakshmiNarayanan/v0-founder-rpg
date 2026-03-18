@@ -9,10 +9,9 @@ interface DialogueHUDProps {
   speakerName: string
   onRespond: (response: string) => void
   isTyping?: boolean
-  disabled?: boolean
 }
 
-export function DialogueHUD({ dialogue, speakerName, onRespond, isTyping = false, disabled = false }: DialogueHUDProps) {
+export function DialogueHUD({ dialogue, speakerName, onRespond, isTyping = false }: DialogueHUDProps) {
   const [displayedText, setDisplayedText] = useState('')
   const [userInput, setUserInput] = useState('')
   const [isComplete, setIsComplete] = useState(false)
@@ -41,7 +40,7 @@ export function DialogueHUD({ dialogue, speakerName, onRespond, isTyping = false
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault()
-    if (userInput.trim() && isComplete && !disabled) {
+    if (userInput.trim() && isComplete) {
       onRespond(userInput.trim())
       setUserInput('')
     }
@@ -101,13 +100,13 @@ export function DialogueHUD({ dialogue, speakerName, onRespond, isTyping = false
                 type="text"
                 value={userInput}
                 onChange={(e) => setUserInput(e.target.value)}
-                placeholder={isComplete && !disabled ? "Type your response..." : "Wait for the committee..."}
-                disabled={!isComplete || disabled}
+                placeholder={isComplete ? "Type your response..." : "Wait for the committee..."}
+                disabled={!isComplete}
                 className="w-full bg-[#0a0a0a] border border-[#FFC627]/30 rounded-lg pl-8 pr-14 py-3 font-mono text-sm text-[#E2E8F0] placeholder-[#4A5568] focus:outline-none focus:border-[#FFC627]/60 focus:ring-1 focus:ring-[#FFC627]/30 disabled:opacity-50 transition-all"
               />
               <motion.button
                 type="submit"
-                disabled={!isComplete || !userInput.trim() || disabled}
+                disabled={!isComplete || !userInput.trim()}
                 whileHover={{ scale: 1.05 }}
                 whileTap={{ scale: 0.95 }}
                 className="absolute right-2 p-2 rounded-md bg-[#FFC627]/20 text-[#FFC627] hover:bg-[#FFC627]/30 disabled:opacity-30 disabled:cursor-not-allowed transition-all"

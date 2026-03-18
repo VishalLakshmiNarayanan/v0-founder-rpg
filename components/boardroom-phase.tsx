@@ -5,21 +5,30 @@ import { motion } from 'framer-motion'
 import { Judge } from './judge'
 import { ConfidenceMeter } from './confidence-meter'
 import { DialogueHUD } from './dialogue-hud'
-import type { JudgeEmotion, DocumentAnalysis } from '@/hooks/use-game-state'
-import { Spinner } from '@/components/ui/spinner'
+import type { JudgeEmotion } from '@/hooks/use-game-state'
+
+const judges = [
+  { name: 'Victoria Chen', role: 'Strategic Ops' },
+  { name: 'Marcus Wei', role: 'Market Analysis' },
+  { name: 'Richard Sterling', role: 'Financial Review' },
+]
+
+const sampleDialogues = [
+  { judge: 1, text: "Your market positioning is intriguing, but I need to understand your competitive moat. What prevents a well-funded competitor from replicating your approach within 18 months?" },
+  { judge: 0, text: "I've reviewed your financial projections. Your customer acquisition cost seems optimistic. Walk me through your unit economics assumptions." },
+  { judge: 2, text: "The team composition concerns me. I see strong technical talent, but where's your go-to-market expertise? How do you plan to bridge that gap?" },
+  { judge: 1, text: "Your Series A valuation asks for a significant premium. Convince me why this isn't just another B2B SaaS play with a fancy AI wrapper." },
+  { judge: 0, text: "Let's talk about your runway. With current burn rate and this raise, you're looking at 18 months. What milestones must you hit to ensure Series B?" },
+]
 
 interface BoardroomPhaseProps {
   initialConfidence: number
-  analysis: DocumentAnalysis
-  documentText: string | null
   onConfidenceChange: (score: number) => void
   onGameEnd: (finalScore: number) => void
 }
 
 export function BoardroomPhase({ 
   initialConfidence, 
-  analysis,
-  documentText,
   onConfidenceChange,
   onGameEnd 
 }: BoardroomPhaseProps) {
@@ -27,145 +36,78 @@ export function BoardroomPhase({
   const [previousConfidence, setPreviousConfidence] = useState(initialConfidence)
   const [activeJudge, setActiveJudge] = useState(1)
   const [emotions, setEmotions] = useState<[JudgeEmotion, JudgeEmotion, JudgeEmotion]>(['neutral', 'neutral', 'neutral'])
+  const [dialogueIndex, setDialogueIndex] = useState(0)
   const [currentDialogue, setCurrentDialogue] = useState('')
-  const [questionNumber, setQuestionNumber] = useState(0)
-  const [previousQuestions, setPreviousQuestions] = useState<string[]>([])
-  const [previousAnswers, setPreviousAnswers] = useState<string[]>([])
-  const [expectedTopics, setExpectedTopics] = useState<string[]>([])
-  const [isLoading, setIsLoading] = useState(true)
-  const [isEvaluating, setIsEvaluating] = useState(false)
-  
-  const totalQuestions = 5
+  const [turnCount, setTurnCount] = useState(0)
 
-  // Generate first question on mount
   useEffect(() => {
-    generateQuestion()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    // Initialize first dialogue
+    const firstDialogue = sampleDialogues[0]
+    setActiveJudge(firstDialogue.judge)
+    setCurrentDialogue(firstDialogue.text)
   }, [])
 
-  const generateQuestion = useCallback(async () => {
-    setIsLoading(true)
-    try {
-      const response = await fetch('/api/question', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          personas: analysis.personas,
-          documentSummary: analysis.documentSummary,
-          documentText,
-          keyTopics: analysis.keyTopics,
-          potentialWeaknesses: analysis.potentialWeaknesses,
-          previousQuestions,
-          previousAnswers,
-          currentConfidence: confidence,
-          questionNumber: questionNumber + 1,
-          totalQuestions,
-        }),
-      })
-
-      const data = await response.json()
-      
-      if (data.question) {
-        setActiveJudge(data.question.judgeIndex)
-        setCurrentDialogue(data.question.question)
-        setExpectedTopics(data.question.expectedTopics)
-        // Reset emotions when new question starts
-        setEmotions(['neutral', 'neutral', 'neutral'])
-      }
-    } catch (error) {
-      console.error('Failed to generate question:', error)
-      // Fallback question
-      setCurrentDialogue("Let's discuss the key aspects of your proposal. What makes your approach unique?")
-    } finally {
-      setIsLoading(false)
-    }
-  }, [analysis, previousQuestions, previousAnswers, confidence, questionNumber])
-
-  const handleResponse = useCallback(async (response: string) => {
-    setIsEvaluating(true)
+  const handleResponse = useCallback((response: string) => {
+    // Simple scoring based on response length and keywords
+    const positiveKeywords = ['growth', 'scale', 'market', 'revenue', 'team', 'data', 'advantage', 'unique', 'proven', 'traction']
+    const negativeKeywords = ['maybe', 'hope', 'think', 'probably', 'soon', 'eventually', 'working on']
     
-    try {
-      const evalResponse = await fetch('/api/evaluate', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question: currentDialogue,
-          answer: response,
-          expectedTopics,
-          judgeName: analysis.personas[activeJudge]?.name,
-          judgePersonality: analysis.personas[activeJudge]?.personality,
-          documentSummary: analysis.documentSummary,
-          documentText,
-          currentConfidence: confidence,
-        }),
-      })
+    let scoreDelta = 0
+    const lowerResponse = response.toLowerCase()
+    
+    positiveKeywords.forEach(keyword => {
+      if (lowerResponse.includes(keyword)) scoreDelta += 3
+    })
+    
+    negativeKeywords.forEach(keyword => {
+      if (lowerResponse.includes(keyword)) scoreDelta -= 2
+    })
+    
+    // Bonus for detailed responses
+    if (response.length > 100) scoreDelta += 5
+    if (response.length > 200) scoreDelta += 5
+    
+    // Random factor
+    scoreDelta += Math.floor(Math.random() * 10) - 5
+    
+    // Update confidence
+    setPreviousConfidence(confidence)
+    const newConfidence = Math.max(0, Math.min(100, confidence + scoreDelta))
+    setConfidence(newConfidence)
+    onConfidenceChange(newConfidence)
 
-      const evalData = await evalResponse.json()
-      
-      if (evalData.evaluation) {
-        const { scoreDelta, emotion } = evalData.evaluation
-        
-        // Update confidence
-        setPreviousConfidence(confidence)
-        const newConfidence = Math.max(0, Math.min(100, confidence + scoreDelta))
-        setConfidence(newConfidence)
-        onConfidenceChange(newConfidence)
-
-        // Update emotion for the active judge
-        const newEmotions: [JudgeEmotion, JudgeEmotion, JudgeEmotion] = ['neutral', 'neutral', 'neutral']
-        newEmotions[activeJudge] = emotion
-        setEmotions(newEmotions)
-
-        // Store Q&A history
-        setPreviousQuestions(prev => [...prev, currentDialogue])
-        setPreviousAnswers(prev => [...prev, response])
-        
-        const nextQuestion = questionNumber + 1
-        setQuestionNumber(nextQuestion)
-
-        // Check for game end
-        if (nextQuestion >= totalQuestions || newConfidence <= 10 || newConfidence >= 95) {
-          setTimeout(() => onGameEnd(newConfidence), 1500)
-          return
-        }
-
-        // Generate next question after delay
-        setTimeout(() => {
-          generateQuestion()
-        }, 1500)
-      }
-    } catch (error) {
-      console.error('Failed to evaluate response:', error)
-      // Fallback: random small adjustment
-      const fallbackDelta = Math.floor(Math.random() * 10) - 3
-      const newConfidence = Math.max(0, Math.min(100, confidence + fallbackDelta))
-      setConfidence(newConfidence)
-      onConfidenceChange(newConfidence)
-      
-      setPreviousQuestions(prev => [...prev, currentDialogue])
-      setPreviousAnswers(prev => [...prev, response])
-      setQuestionNumber(prev => prev + 1)
-      
-      setTimeout(() => generateQuestion(), 1000)
-    } finally {
-      setIsEvaluating(false)
+    // Update emotions based on score change
+    const newEmotions: [JudgeEmotion, JudgeEmotion, JudgeEmotion] = [...emotions]
+    if (scoreDelta > 5) {
+      newEmotions[activeJudge] = 'smile'
+    } else if (scoreDelta < -3) {
+      newEmotions[activeJudge] = 'worse'
+    } else {
+      newEmotions[activeJudge] = 'neutral'
     }
-  }, [
-    currentDialogue, 
-    expectedTopics, 
-    analysis, 
-    activeJudge, 
-    confidence, 
-    questionNumber, 
-    onConfidenceChange, 
-    onGameEnd,
-    generateQuestion
-  ])
+    setEmotions(newEmotions)
 
-  const judges = analysis.personas.map(p => ({
-    name: p.name,
-    role: p.role,
-  }))
+    // Progress to next turn
+    const nextTurn = turnCount + 1
+    setTurnCount(nextTurn)
+
+    // Check for game end
+    if (nextTurn >= sampleDialogues.length || newConfidence <= 10 || newConfidence >= 90) {
+      setTimeout(() => onGameEnd(newConfidence), 1500)
+      return
+    }
+
+    // Next dialogue after delay
+    setTimeout(() => {
+      const nextDialogue = sampleDialogues[nextTurn]
+      setActiveJudge(nextDialogue.judge)
+      setCurrentDialogue(nextDialogue.text)
+      setDialogueIndex(nextTurn)
+      
+      // Reset other judges to neutral
+      setEmotions(['neutral', 'neutral', 'neutral'])
+    }, 1000)
+  }, [confidence, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd])
 
   return (
     <motion.div
@@ -213,44 +155,18 @@ export function BoardroomPhase({
         </div>
       </div>
 
-      {/* Loading Overlay */}
-      {(isLoading || isEvaluating) && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="absolute inset-0 z-40 flex items-center justify-center bg-[#001E44]/50"
-        >
-          <div className="glass rounded-xl p-6 border border-[#FFC627]/30 flex items-center gap-4">
-            <Spinner className="text-[#FFC627]" />
-            <span className="font-mono text-sm text-[#FFC627]">
-              {isLoading ? 'Committee is deliberating...' : 'Evaluating response...'}
-            </span>
-          </div>
-        </motion.div>
-      )}
-
       {/* Dialogue HUD */}
       <DialogueHUD
         dialogue={currentDialogue}
         speakerName={judges[activeJudge]?.name || 'Committee'}
         onRespond={handleResponse}
-        disabled={isLoading || isEvaluating}
       />
 
       {/* Turn indicator */}
       <div className="absolute top-4 right-4 z-30">
         <div className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30">
           <span className="font-mono text-xs text-[#A0AEC0]">
-            QUESTION {questionNumber + 1}/{totalQuestions}
-          </span>
-        </div>
-      </div>
-
-      {/* Document context hint */}
-      <div className="absolute top-4 left-4 z-30 max-w-xs">
-        <div className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30">
-          <span className="font-mono text-xs text-[#A0AEC0] uppercase tracking-wider">
-            {analysis.documentType.replace('_', ' ')}
+            QUESTION {turnCount + 1}/{sampleDialogues.length}
           </span>
         </div>
       </div>

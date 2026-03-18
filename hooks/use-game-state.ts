@@ -6,22 +6,6 @@ export type GamePhase = 'briefing' | 'transition' | 'boardroom' | 'results'
 
 export type JudgeEmotion = 'neutral' | 'smile' | 'worse'
 
-export interface Persona {
-  name: string
-  role: string
-  personality: string
-  focusAreas: string[]
-  toughQuestionStyle: string
-}
-
-export interface DocumentAnalysis {
-  personas: Persona[]
-  documentSummary: string
-  documentType: string
-  keyTopics: string[]
-  potentialWeaknesses: string[]
-}
-
 export interface GameState {
   phase: GamePhase
   confidenceScore: number
@@ -30,20 +14,6 @@ export interface GameState {
   currentDialogue: string
   uploadedFile: File | null
   meetingContext: string
-  // AI-generated data
-  analysis: DocumentAnalysis | null
-  documentText: string | null
-  previousQuestions: string[]
-  previousAnswers: string[]
-  currentQuestion: {
-    question: string
-    judgeIndex: number
-    expectedTopics: string[]
-    followUpHint: string | null
-  } | null
-  questionNumber: number
-  totalQuestions: number
-  isProcessing: boolean
 }
 
 const initialState: GameState = {
@@ -54,14 +24,6 @@ const initialState: GameState = {
   currentDialogue: '',
   uploadedFile: null,
   meetingContext: '',
-  analysis: null,
-  documentText: null,
-  previousQuestions: [],
-  previousAnswers: [],
-  currentQuestion: null,
-  questionNumber: 0,
-  totalQuestions: 5,
-  isProcessing: false,
 }
 
 export function useGameState() {
@@ -109,40 +71,6 @@ export function useGameState() {
     setState(prev => ({ ...prev, meetingContext: context }))
   }, [])
 
-  const setAnalysis = useCallback((analysis: DocumentAnalysis | null) => {
-    setState(prev => ({ ...prev, analysis }))
-  }, [])
-
-  const setDocumentText = useCallback((documentText: string | null) => {
-    setState(prev => ({ ...prev, documentText }))
-  }, [])
-
-  const setCurrentQuestion = useCallback((question: GameState['currentQuestion']) => {
-    setState(prev => ({ 
-      ...prev, 
-      currentQuestion: question,
-      activeJudgeIndex: question?.judgeIndex ?? prev.activeJudgeIndex,
-      currentDialogue: question?.question ?? ''
-    }))
-  }, [])
-
-  const addQuestionAnswer = useCallback((question: string, answer: string) => {
-    setState(prev => ({
-      ...prev,
-      previousQuestions: [...prev.previousQuestions, question],
-      previousAnswers: [...prev.previousAnswers, answer],
-      questionNumber: prev.questionNumber + 1,
-    }))
-  }, [])
-
-  const setIsProcessing = useCallback((isProcessing: boolean) => {
-    setState(prev => ({ ...prev, isProcessing }))
-  }, [])
-
-  const resetEmotions = useCallback(() => {
-    setState(prev => ({ ...prev, judgeEmotions: ['neutral', 'neutral', 'neutral'] }))
-  }, [])
-
   const resetGame = useCallback(() => {
     setState(initialState)
   }, [])
@@ -157,12 +85,6 @@ export function useGameState() {
     setCurrentDialogue,
     setUploadedFile,
     setMeetingContext,
-    setAnalysis,
-    setDocumentText,
-    setCurrentQuestion,
-    addQuestionAnswer,
-    setIsProcessing,
-    resetEmotions,
     resetGame,
   }
 }
