@@ -15,7 +15,7 @@ const jetbrains = JetBrains_Mono({
 
 export const metadata: Metadata = {
   title: 'The Shadow Committee',
-  description: 'A Founder RPG to stress-test your business judgment',
+  description: 'AI-Powered Executive Review Simulation - Upload any document and face a custom review committee',
   generator: 'v0.app',
   icons: {
     icon: [

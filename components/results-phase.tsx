@@ -12,33 +12,33 @@ export function ResultsPhase({ finalScore, onRestart }: ResultsPhaseProps) {
   const getVerdict = () => {
     if (finalScore >= 70) {
       return {
-        title: 'INVESTMENT APPROVED',
+        title: 'APPROVED',
         subtitle: 'The Shadow Committee has reached a favorable verdict.',
         icon: Trophy,
         color: 'text-green-400',
         bgColor: 'bg-green-400/10',
         borderColor: 'border-green-400/30',
-        message: 'Your pitch demonstrated strong fundamentals, clear vision, and compelling market opportunity. The Committee recommends proceeding to term sheet negotiations.',
+        message: 'Your presentation demonstrated strong fundamentals, clear reasoning, and compelling arguments. The Committee was impressed with your preparation and responses.',
       }
     } else if (finalScore >= 40) {
       return {
-        title: 'CONDITIONAL INTEREST',
-        subtitle: 'The Shadow Committee requires further due diligence.',
+        title: 'CONDITIONAL',
+        subtitle: 'The Shadow Committee requires further clarification.',
         icon: AlertCircle,
         color: 'text-[#FFC627]',
         bgColor: 'bg-[#FFC627]/10',
         borderColor: 'border-[#FFC627]/30',
-        message: 'Your pitch showed promise but raised concerns that need addressing. The Committee suggests a follow-up session after you\'ve refined your market positioning and financial projections.',
+        message: 'Your presentation showed promise but raised concerns that need addressing. The Committee suggests a follow-up session after you have refined your approach and supporting evidence.',
       }
     } else {
       return {
-        title: 'INVESTMENT DECLINED',
+        title: 'DECLINED',
         subtitle: 'The Shadow Committee has reached an unfavorable verdict.',
         icon: XCircle,
         color: 'text-red-400',
         bgColor: 'bg-red-400/10',
         borderColor: 'border-red-400/30',
-        message: 'Your pitch failed to address critical concerns regarding market viability, competitive positioning, or team readiness. The Committee recommends significant pivots before seeking further funding.',
+        message: 'Your presentation failed to address critical concerns. The Committee recommends significant revisions to your approach, evidence, and overall argumentation before attempting again.',
       }
     }
   }
@@ -147,7 +147,7 @@ export function ResultsPhase({ finalScore, onRestart }: ResultsPhaseProps) {
           >
             <RotateCcw className="w-5 h-5" />
             <span className="font-mono text-sm uppercase tracking-wider">
-              Retry Simulation
+              New Session
             </span>
           </motion.button>
         </div>
