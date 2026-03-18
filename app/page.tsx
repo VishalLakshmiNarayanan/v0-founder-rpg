@@ -15,6 +15,7 @@ export default function ShadowCommittee() {
   const [confidence, setConfidence] = useState(50)
   const [finalScore, setFinalScore] = useState(50)
   const [analysis, setAnalysis] = useState<DocumentAnalysis | null>(null)
+  const [documentText, setDocumentText] = useState<string | null>(null)
   const [isAnalyzing, setIsAnalyzing] = useState(false)
   const [analyzeError, setAnalyzeError] = useState<string | null>(null)
 
@@ -56,6 +57,7 @@ export default function ShadowCommittee() {
 
       if (data.analysis) {
         setAnalysis(data.analysis)
+        setDocumentText(data.documentText || null)
         setPhase('transition')
       } else {
         throw new Error('No analysis returned')
@@ -89,6 +91,7 @@ export default function ShadowCommittee() {
     setConfidence(50)
     setFinalScore(50)
     setAnalysis(null)
+    setDocumentText(null)
     setAnalyzeError(null)
     setPhase('briefing')
   }, [])
@@ -118,6 +121,7 @@ export default function ShadowCommittee() {
             key="boardroom"
             initialConfidence={confidence}
             analysis={analysis}
+            documentText={documentText}
             onConfidenceChange={handleConfidenceChange}
             onGameEnd={handleGameEnd}
           />

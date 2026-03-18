@@ -11,6 +11,7 @@ import { Spinner } from '@/components/ui/spinner'
 interface BoardroomPhaseProps {
   initialConfidence: number
   analysis: DocumentAnalysis
+  documentText: string | null
   onConfidenceChange: (score: number) => void
   onGameEnd: (finalScore: number) => void
 }
@@ -18,6 +19,7 @@ interface BoardroomPhaseProps {
 export function BoardroomPhase({ 
   initialConfidence, 
   analysis,
+  documentText,
   onConfidenceChange,
   onGameEnd 
 }: BoardroomPhaseProps) {
@@ -50,6 +52,7 @@ export function BoardroomPhase({
         body: JSON.stringify({
           personas: analysis.personas,
           documentSummary: analysis.documentSummary,
+          documentText,
           keyTopics: analysis.keyTopics,
           potentialWeaknesses: analysis.potentialWeaknesses,
           previousQuestions,
@@ -92,6 +95,7 @@ export function BoardroomPhase({
           judgeName: analysis.personas[activeJudge]?.name,
           judgePersonality: analysis.personas[activeJudge]?.personality,
           documentSummary: analysis.documentSummary,
+          documentText,
           currentConfidence: confidence,
         }),
       })

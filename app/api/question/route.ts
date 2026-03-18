@@ -12,6 +12,7 @@ export async function POST(req: Request) {
   const { 
     personas, 
     documentSummary, 
+    documentText,
     keyTopics, 
     potentialWeaknesses,
     previousQuestions,
@@ -35,7 +36,10 @@ ${personas.map((p: { name: string; role: string; personality: string; focusAreas
    Question Style: ${p.toughQuestionStyle}`
 ).join('\n\n')}
 
-DOCUMENT: ${documentSummary}
+DOCUMENT SUMMARY: ${documentSummary}
+
+DOCUMENT CONTENT (for reference):
+${documentText ? documentText.slice(0, 8000) : 'Not available'}
 
 KEY TOPICS TO EXPLORE: ${keyTopics.join(', ')}
 

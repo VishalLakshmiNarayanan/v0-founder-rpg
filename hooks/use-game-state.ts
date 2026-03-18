@@ -32,6 +32,7 @@ export interface GameState {
   meetingContext: string
   // AI-generated data
   analysis: DocumentAnalysis | null
+  documentText: string | null
   previousQuestions: string[]
   previousAnswers: string[]
   currentQuestion: {
@@ -54,6 +55,7 @@ const initialState: GameState = {
   uploadedFile: null,
   meetingContext: '',
   analysis: null,
+  documentText: null,
   previousQuestions: [],
   previousAnswers: [],
   currentQuestion: null,
@@ -111,6 +113,10 @@ export function useGameState() {
     setState(prev => ({ ...prev, analysis }))
   }, [])
 
+  const setDocumentText = useCallback((documentText: string | null) => {
+    setState(prev => ({ ...prev, documentText }))
+  }, [])
+
   const setCurrentQuestion = useCallback((question: GameState['currentQuestion']) => {
     setState(prev => ({ 
       ...prev, 
@@ -152,6 +158,7 @@ export function useGameState() {
     setUploadedFile,
     setMeetingContext,
     setAnalysis,
+    setDocumentText,
     setCurrentQuestion,
     addQuestionAnswer,
     setIsProcessing,

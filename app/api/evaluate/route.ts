@@ -17,6 +17,7 @@ export async function POST(req: Request) {
     judgeName,
     judgePersonality,
     documentSummary,
+    documentText,
     currentConfidence
   } = await req.json()
 
@@ -25,7 +26,10 @@ export async function POST(req: Request) {
 EVALUATING JUDGE: ${judgeName}
 JUDGE PERSONALITY: ${judgePersonality}
 
-DOCUMENT CONTEXT: ${documentSummary}
+DOCUMENT SUMMARY: ${documentSummary}
+
+DOCUMENT CONTENT (for fact-checking):
+${documentText ? documentText.slice(0, 6000) : 'Not available'}
 
 THE QUESTION ASKED: ${question}
 
