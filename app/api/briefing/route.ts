@@ -30,7 +30,10 @@ export async function POST(req: Request) {
       """
 
       Based ONLY on this context and logic, provide:
-      1. "personas": Exactly 3 detailed Personas (committee members/judges). Each needs a "name" and a "role" (like "Strategic Ops" or "Financial Review").
+      1. "personas": Exactly 3 detailed Personas (committee members/judges). Each needs a "name" and a "role" (like "Strategic Ops" or "Financial Review"). IMPORTANT FORMAT:
+          - The first persona (index 0) MUST be a female character (give a female name).
+          - The second persona (index 1) MUST be a male character (give a male name).
+          - The third persona (index 2) MUST be a male character (give a male name).
       2. "questions": Exactly 5 progressive questions that these personas will ask the user. Questions must be highly specific to the uploaded text and context provided. Each question must specify the "judge" index (0, 1, or 2) indicating who will ask it.
 
       Return ONLY a valid JSON object in this exact format:

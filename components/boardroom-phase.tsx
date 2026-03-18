@@ -3,7 +3,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Judge } from './judge'
-import { ConfidenceMeter } from './confidence-meter'
 import { DialogueHUD } from './dialogue-hud'
 import type { JudgeEmotion } from '@/hooks/use-game-state'
 
@@ -20,8 +19,8 @@ export function BoardroomPhase({
   onGameEnd,
   gameData
 }: BoardroomPhaseProps) {
-  const [confidence, setConfidence] = useState(initialConfidence)
-  const [previousConfidence, setPreviousConfidence] = useState(initialConfidence)
+  const [confidences, setConfidences] = useState([initialConfidence, initialConfidence, initialConfidence])
+  const [previousConfidences, setPreviousConfidences] = useState([initialConfidence, initialConfidence, initialConfidence])
   const [activeJudge, setActiveJudge] = useState(1)
   const [emotions, setEmotions] = useState<[JudgeEmotion, JudgeEmotion, JudgeEmotion]>(['neutral', 'neutral', 'neutral'])
   const [dialogueIndex, setDialogueIndex] = useState(0)
@@ -68,11 +67,14 @@ export function BoardroomPhase({
       let emotion = result?.data?.emotion || 'neutral';
       if (!['smile', 'neutral', 'worse'].includes(emotion)) emotion = 'neutral';
 
-      // Update confidence
-      setPreviousConfidence(confidence)
-      const newConfidence = Math.max(0, Math.min(100, confidence + scoreDelta))
-      setConfidence(newConfidence)
-      onConfidenceChange(newConfidence)
+      // Update confidence for active judge
+      setPreviousConfidences([...confidences])
+      const newConfidences = [...confidences]
+      newConfidences[activeJudge] = Math.max(0, Math.min(100, newConfidences[activeJudge] + scoreDelta))
+      setConfidences(newConfidences)
+      
+      const avgConfidence = Math.round(newConfidences.reduce((a, b) => a + b, 0) / 3)
+      onConfidenceChange(avgConfidence)
 
       // Update emotions
       const newEmotions: [JudgeEmotion, JudgeEmotion, JudgeEmotion] = [...emotions]
@@ -84,8 +86,8 @@ export function BoardroomPhase({
       setTurnCount(nextTurn)
 
       // Check for game end
-      if (nextTurn >= dialogues.length || newConfidence <= 10 || newConfidence >= 90) {
-        setTimeout(() => onGameEnd(newConfidence), 1500)
+      if (nextTurn >= dialogues.length || avgConfidence <= 10 || avgConfidence >= 90) {
+        setTimeout(() => onGameEnd(avgConfidence), 1500)
         return
       }
 
@@ -105,7 +107,7 @@ export function BoardroomPhase({
       console.error(e);
       setIsEvaluating(false);
     }
-  }, [confidence, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd, currentDialogue, gameData, isEvaluating, dialogues, judges])
+  }, [confidences, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd, currentDialogue, gameData, isEvaluating, dialogues, judges])
 
   return (
     <motion.div
@@ -125,17 +127,7 @@ export function BoardroomPhase({
       {/* Overlay for better contrast */}
       <div className="absolute inset-0 bg-gradient-to-b from-[#001E44]/30 via-transparent to-[#001E44]/70" />
 
-      {/* Top HUD - Confidence Meter */}
-      <motion.div
-        initial={{ y: -50, opacity: 0 }}
-        animate={{ y: 0, opacity: 1 }}
-        transition={{ delay: 0.3 }}
-        className="absolute top-0 left-0 right-0 z-30 pt-4 px-4"
-      >
-        <div className="glass rounded-xl p-4 max-w-2xl mx-auto border border-[#FFC627]/20">
-          <ConfidenceMeter score={confidence} previousScore={previousConfidence} />
-        </div>
-      </motion.div>
+      {/* Removed Top HUD - ConfidenceMeter was here */}
 
       {/* Judges */}
       <div className="absolute inset-0 flex items-end justify-center pb-48 px-4">
@@ -148,6 +140,8 @@ export function BoardroomPhase({
               isActive={activeJudge === index}
               name={judge.name}
               role={judge.role}
+              confidence={confidences[index]}
+              previousConfidence={previousConfidences[index]}
             />
           ))}
         </div>

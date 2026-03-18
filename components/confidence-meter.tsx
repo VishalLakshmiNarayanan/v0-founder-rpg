@@ -6,9 +6,10 @@ import { TrendingUp, TrendingDown, Minus } from 'lucide-react'
 interface ConfidenceMeterProps {
   score: number
   previousScore?: number
+  compact?: boolean
 }
 
-export function ConfidenceMeter({ score, previousScore = 50 }: ConfidenceMeterProps) {
+export function ConfidenceMeter({ score, previousScore = 50, compact = false }: ConfidenceMeterProps) {
   const trend = score > previousScore ? 'up' : score < previousScore ? 'down' : 'stable'
   
   const getStatusColor = () => {
@@ -26,23 +27,34 @@ export function ConfidenceMeter({ score, previousScore = 50 }: ConfidenceMeterPr
   }
 
   return (
-    <div className="w-full max-w-2xl mx-auto">
-      <div className="flex items-center justify-between mb-2">
+    <div className={`w-full ${compact ? 'max-w-[150px]' : 'max-w-2xl'} mx-auto`}>
+      <div className={`flex ${compact ? 'flex-col items-center gap-1' : 'items-center justify-between'} mb-2`}>
+        {!compact && (
+          <div className="flex items-center gap-2">
+            <span className="font-mono text-xs text-[#A0AEC0] uppercase tracking-wider">
+              Shadow Confidence
+            </span>
+            {trend === 'up' && <TrendingUp className="w-4 h-4 text-green-400" />}
+            {trend === 'down' && <TrendingDown className="w-4 h-4 text-red-400" />}
+            {trend === 'stable' && <Minus className="w-4 h-4 text-[#4A5568]" />}
+          </div>
+        )}
         <div className="flex items-center gap-2">
-          <span className="font-mono text-xs text-[#A0AEC0] uppercase tracking-wider">
-            Shadow Confidence
-          </span>
-          {trend === 'up' && <TrendingUp className="w-4 h-4 text-green-400" />}
-          {trend === 'down' && <TrendingDown className="w-4 h-4 text-red-400" />}
-          {trend === 'stable' && <Minus className="w-4 h-4 text-[#4A5568]" />}
-        </div>
-        <div className="flex items-center gap-3">
-          <span className={`font-mono text-xs uppercase tracking-wider ${getStatusColor()}`}>
-            {getStatusText()}
-          </span>
-          <span className="font-mono text-lg font-bold text-[#FFC627]">
+          {!compact && (
+            <span className={`font-mono text-xs uppercase tracking-wider ${getStatusColor()}`}>
+              {getStatusText()}
+            </span>
+          )}
+          <span className={`font-mono ${compact ? 'text-sm' : 'text-lg'} font-bold ${getStatusColor()}`}>
             {score}%
           </span>
+          {compact && (
+            <>
+              {trend === 'up' && <TrendingUp className="w-3 h-3 text-green-400" />}
+              {trend === 'down' && <TrendingDown className="w-3 h-3 text-red-400" />}
+              {trend === 'stable' && <Minus className="w-3 h-3 text-[#4A5568]" />}
+            </>
+          )}
         </div>
       </div>
 

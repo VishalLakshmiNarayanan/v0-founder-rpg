@@ -3,12 +3,16 @@
 import { motion } from 'framer-motion'
 import type { JudgeEmotion } from '@/hooks/use-game-state'
 
+import { ConfidenceMeter } from './confidence-meter'
+
 interface JudgeProps {
   index: number
   emotion: JudgeEmotion
   isActive: boolean
   name: string
   role: string
+  confidence: number
+  previousConfidence: number
 }
 
 const judgeImages = {
@@ -29,7 +33,7 @@ const judgeImages = {
   },
 } as const
 
-export function Judge({ index, emotion, isActive, name, role }: JudgeProps) {
+export function Judge({ index, emotion, isActive, name, role, confidence, previousConfidence }: JudgeProps) {
   const images = judgeImages[index as keyof typeof judgeImages]
   const currentImage = images[emotion]
 
@@ -87,9 +91,12 @@ export function Judge({ index, emotion, isActive, name, role }: JudgeProps) {
         <p className={`font-serif text-sm font-semibold ${isActive ? 'text-[#FFC627]' : 'text-[#A0AEC0]'}`}>
           {name}
         </p>
-        <p className="font-mono text-xs text-[#4A5568] uppercase tracking-wider">
+        <p className="font-mono text-xs text-[#4A5568] uppercase tracking-wider mb-3">
           {role}
         </p>
+        <div className="w-full mt-2 transform scale-[0.85] origin-top">
+          <ConfidenceMeter score={confidence} previousScore={previousConfidence} compact={true} />
+        </div>
       </motion.div>
     </motion.div>
   )
