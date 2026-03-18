@@ -144,33 +144,48 @@ export function ResultsPhase({ finalScore, onRestart, outcomes, reportData }: Re
       yPos += (splitFeedback.length * 5) + 10;
     });
 
-    // Q&A Breakdown
-    if (conclusiveReport.questionFeedback && conclusiveReport.questionFeedback.length > 0) {
+    // Q&A Breakdown — use real per-turn data if available
+    const turnLog: any[] = reportData?.turnLog || [];
+    const qaSource = turnLog.length > 0 ? turnLog : (conclusiveReport.questionFeedback || []);
+    const usingTurnLog = turnLog.length > 0;
+
+    if (qaSource.length > 0) {
       addPageIfNeeded(30);
       doc.setFont("helvetica", "bold");
       doc.setFontSize(16);
       doc.text("Cross-Examination Feedback Log", 14, yPos);
       yPos += 10;
 
-      conclusiveReport.questionFeedback.forEach((qf: any, i: number) => {
-        addPageIfNeeded(50);
+      qaSource.forEach((entry: any, i: number) => {
+        addPageIfNeeded(60);
+
+        const judge = usingTurnLog ? entry.judgeName : `Evaluator ${entry.judge}`;
+        const question = usingTurnLog ? entry.question : entry.question;
+        const answer = usingTurnLog ? entry.response : entry.answer;
+        const feedback = usingTurnLog ? entry.feedback : entry.feedback;
+        const delta: number | undefined = usingTurnLog ? entry.scoreDelta : undefined;
+
         doc.setFont("helvetica", "bold");
         doc.setFontSize(11);
-        doc.text(`Turn ${i+1}: Evaluator ${qf.judge}`, 14, yPos);
-        yPos += 6;
+        const deltaLabel = delta !== undefined
+          ? `  [Score: ${delta > 0 ? '+' : ''}${delta}]`
+          : '';
+        const headerLine = doc.splitTextToSize(`Turn ${i+1}: ${judge}${deltaLabel}`, 180);
+        doc.text(headerLine, 14, yPos);
+        yPos += (headerLine.length * 6);
 
         doc.setFont("helvetica", "normal");
         doc.setFontSize(10);
-        const splitQ = doc.splitTextToSize(`Q: ${qf.question}`, 180);
+        const splitQ = doc.splitTextToSize(`Q: ${question}`, 180);
         doc.text(splitQ, 14, yPos);
         yPos += (splitQ.length * 5) + 2;
 
-        const splitA = doc.splitTextToSize(`Founder: ${qf.answer}`, 180);
+        const splitA = doc.splitTextToSize(`Founder: ${answer}`, 180);
         doc.text(splitA, 14, yPos);
         yPos += (splitA.length * 5) + 3;
 
         doc.setFont("helvetica", "italic");
-        const splitF = doc.splitTextToSize(`Analysis: ${qf.feedback}`, 180);
+        const splitF = doc.splitTextToSize(`Feedback: ${feedback}`, 180);
         doc.text(splitF, 14, yPos);
         yPos += (splitF.length * 5) + 12;
       });

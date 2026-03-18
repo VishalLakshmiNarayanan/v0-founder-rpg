@@ -24,32 +24,29 @@ export async function POST(req: Request) {
     const prompt = `
       You are generating seed data for an executive boardroom simulation where the user represents a team pitching something.
       Extract a summary from the knowledge base and with the provided user context, create 3 personas.
-      
+
       Here is the overall context for the meeting provided by the user: "${context}"
       Here is the text extracted from their uploaded PDF deck/summary (knowledge base):
       """
       ${parsedText}
       """
 
-      Based ONLY on this context, output a JSON with exactly 6 fields:
-      1. "persona1": Describe the first persona (must be a female character). The object should contain "name", "role", "initial_confidence" (an integer from 0 to 100), and "prompt" (where the prompt specifies the person's behavior, perspectives, beliefs, domain, rules, instructions, capabilities, role, etc). 
+      Based ONLY on this context, output a JSON with exactly 5 fields:
+      1. "persona1": Describe the first persona (must be a female character). The object should contain "name", "role", "initial_confidence" (an integer from 0 to 100), "prompt" (where the prompt specifies the person's behavior, perspectives, beliefs, domain, rules, instructions, capabilities, role, etc), and "concerns" (an array of exactly 3 concern objects specific to this persona's domain).
          METHOD TO CALCULATE initial_confidence: Evaluate how well the uploaded slide text aligns with the meeting context and this persona's specific domain. If the slides directly address their domain well, give a moderate/high start (e.g., 60-75). If their domain is ignored in the slides, start them lower (e.g., 30-45). Do not default to 50.
-      2. "persona2": Describe the second persona (must be a male character). The object should contain "name", "role", "initial_confidence" (calculated using the method above), and "prompt".
-      3. "persona3": Describe the third persona (must be a male character). The object should contain "name", "role", "initial_confidence" (calculated using the method above), and "prompt".
+         METHOD TO GENERATE concerns: Identify exactly 3 specific gaps, risks, or unanswered questions that this persona would care about based on their domain and the uploaded material. Phrase each concern as a noun clause (NOT a question), e.g. "Unclear customer acquisition cost justification" or "No evidence of regulatory approval pathway". Concerns must be domain-specific and grounded in what is missing or unclear from the uploaded material. Use IDs "p0_c0", "p0_c1", "p0_c2" for persona 1's concerns.
+      2. "persona2": Describe the second persona (must be a male character). The object should contain "name", "role", "initial_confidence" (calculated using the method above), "prompt", and "concerns" (exactly 3 concern objects using IDs "p1_c0", "p1_c1", "p1_c2").
+      3. "persona3": Describe the third persona (must be a male character). The object should contain "name", "role", "initial_confidence" (calculated using the method above), "prompt", and "concerns" (exactly 3 concern objects using IDs "p2_c0", "p2_c1", "p2_c2").
       4. "systemprompt": This prompt controls the conversation of the entire meeting and also defines the user, role, behavior of the personas collectively.
       5. "meetinggoal": The specific goal of this meeting, which depends on the context of the meeting.
-      6. "questions": Exactly 5 progressive questions that these personas will ask the user. Questions must be highly specific to the uploaded text and context provided. Each question must specify the "judge" index (0, 1, or 2) indicating who will ask it. Format: [{"judge": 0, "text": "..."}, ...]
 
       Return ONLY a valid JSON object in this exact format:
       {
-        "persona1": { "name": "...", "role": "...", "initial_confidence": 50, "prompt": "..." },
-        "persona2": { "name": "...", "role": "...", "initial_confidence": 50, "prompt": "..." },
-        "persona3": { "name": "...", "role": "...", "initial_confidence": 50, "prompt": "..." },
+        "persona1": { "name": "...", "role": "...", "initial_confidence": 50, "prompt": "...", "concerns": [{"id": "p0_c0", "text": "..."}, {"id": "p0_c1", "text": "..."}, {"id": "p0_c2", "text": "..."}] },
+        "persona2": { "name": "...", "role": "...", "initial_confidence": 50, "prompt": "...", "concerns": [{"id": "p1_c0", "text": "..."}, {"id": "p1_c1", "text": "..."}, {"id": "p1_c2", "text": "..."}] },
+        "persona3": { "name": "...", "role": "...", "initial_confidence": 50, "prompt": "...", "concerns": [{"id": "p2_c0", "text": "..."}, {"id": "p2_c1", "text": "..."}, {"id": "p2_c2", "text": "..."}] },
         "systemprompt": "...",
-        "meetinggoal": "...",
-        "questions": [
-          { "judge": 0, "text": "..." }
-        ]
+        "meetinggoal": "..."
       }
     `;
 
@@ -72,18 +69,25 @@ export async function POST(req: Request) {
       meetinggoal: parsed.meetinggoal
     }, null, 2));
 
+    const mapConcerns = (rawConcerns: any[], prefix: string) => {
+      if (!Array.isArray(rawConcerns)) return [];
+      return rawConcerns.slice(0, 3).map((c: any, i: number) => ({
+        id: c.id || `${prefix}_c${i}`,
+        text: c.text || '',
+        covered: false,
+        resolved: false,
+      }));
+    };
+
     // Map new fields back to the expected array format for backwards compatibility with the frontend
     const data = {
       personas: [
-        { ...parsed.persona1, evaluationPrompt: parsed.persona1?.prompt },
-        { ...parsed.persona2, evaluationPrompt: parsed.persona2?.prompt },
-        { ...parsed.persona3, evaluationPrompt: parsed.persona3?.prompt }
+        { ...parsed.persona1, evaluationPrompt: parsed.persona1?.prompt, concerns: mapConcerns(parsed.persona1?.concerns, 'p0') },
+        { ...parsed.persona2, evaluationPrompt: parsed.persona2?.prompt, concerns: mapConcerns(parsed.persona2?.concerns, 'p1') },
+        { ...parsed.persona3, evaluationPrompt: parsed.persona3?.prompt, concerns: mapConcerns(parsed.persona3?.concerns, 'p2') },
       ],
       systemprompt: parsed.systemprompt,
       meetinggoal: parsed.meetinggoal,
-      questions: parsed.questions && parsed.questions.length > 0 ? parsed.questions : [
-        { judge: 0, text: "Let's begin. Based on your presentation, can you outline your core value proposition?" }
-      ],
       outcomes: {
         success: { title: "APPROVED", subtitle: "Favorable outcome", message: "The Committee recommends proceeding." },
         conditional: { title: "CONDITIONAL", subtitle: "Requires further review", message: "The Committee suggests a follow-up session." },

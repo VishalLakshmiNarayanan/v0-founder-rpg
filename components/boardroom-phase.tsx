@@ -6,15 +6,116 @@ import { Judge } from './judge'
 import { DialogueHUD } from './dialogue-hud'
 import type { JudgeEmotion } from '@/hooks/use-game-state'
 
+// ─── Types ───────────────────────────────────────────────────────────────────
+
+interface Concern {
+  id: string        // format: "p{idx}_c{idx}", e.g. "p0_c2"
+  text: string      // noun clause describing the gap/risk
+  covered: boolean  // true once a question targeting this concern was asked
+  resolved: boolean // true if the founder adequately answered it (LLM-confirmed)
+}
+
 interface BoardroomPhaseProps {
   initialConfidence: number
   onConfidenceChange: (score: number) => void
   onGameEnd: (finalScore: number, reportData: any) => void
-  gameData: { personas: any[], questions: any[], context: string } | null
+  gameData: { personas: any[], context: string, outcomes?: any } | null
 }
 
-export function BoardroomPhase({ 
-  initialConfidence, 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const MAX_TOTAL_CONCERNS_PER_PERSONA = 5
+const MAX_QUESTIONS_PER_PERSONA = 4
+const MAX_TURNS = 12
+const MIN_TURNS = 3
+
+// ─── Pure Orchestration Functions ────────────────────────────────────────────
+
+/**
+ * Weighted random persona selector.
+ * Lower confidence, more remaining question capacity, and more uncovered concerns
+ * all increase a persona's probability of being selected next.
+ * A 0.6x dampener is applied if the same persona spoke last turn.
+ */
+function selectNextPersona(
+  confidences: number[],
+  questionsPerPersona: number[],
+  personaConcerns: Concern[][],
+  lastPersona?: number
+): number {
+  const rawScores = [0, 1, 2].map(i => {
+    const uncovered = personaConcerns[i].filter(c => !c.covered && !c.resolved).length
+    if (uncovered === 0 || questionsPerPersona[i] >= MAX_QUESTIONS_PER_PERSONA) return 0
+
+    const confWeight = (100 - confidences[i]) / 100
+    const qRemainingWeight = 1 - questionsPerPersona[i] / MAX_QUESTIONS_PER_PERSONA
+    const uncoveredWeight = uncovered / MAX_TOTAL_CONCERNS_PER_PERSONA
+
+    let score = confWeight * 0.4 + qRemainingWeight * 0.3 + uncoveredWeight * 0.3
+    if (i === lastPersona) score *= 0.6 // dampen back-to-back same persona
+    return score
+  })
+
+  const total = rawScores.reduce((a, b) => a + b, 0)
+
+  // Fallback: all exhausted → pick lowest-confidence persona
+  if (total === 0) {
+    let minConf = Infinity, fallback = 0
+    confidences.forEach((c, i) => { if (c < minConf) { minConf = c; fallback = i } })
+    return fallback
+  }
+
+  // Weighted random selection
+  const probs = rawScores.map(s => s / total)
+  const rand = Math.random()
+  let cumul = 0
+  for (let i = 0; i < 3; i++) {
+    cumul += probs[i]
+    if (rand <= cumul) return i
+  }
+  return 2 // floating-point edge fallback
+}
+
+/** Returns the first uncovered, unresolved concern for a persona. */
+function getActiveConcern(concerns: Concern[]): Concern | null {
+  return concerns.find(c => !c.covered && !c.resolved) ?? null
+}
+
+/** Collects texts of all concerns that have been covered or resolved, for repetition prevention. */
+function buildCoveredConcernTexts(personaConcerns: Concern[][]): string[] {
+  return personaConcerns.flat().filter(c => c.covered || c.resolved).map(c => c.text)
+}
+
+/** Returns true if the game should end. */
+function checkGameEnd(
+  turnCount: number,
+  avgConfidence: number,
+  personaConcerns: Concern[][],
+  questionsPerPersona: number[]
+): boolean {
+  if (turnCount < MIN_TURNS) return false
+
+  // Primary: all concerns done
+  if (personaConcerns.every(pc => pc.every(c => c.covered || c.resolved))) return true
+
+  // Safety caps
+  if (turnCount >= MAX_TURNS) return true
+  if (avgConfidence <= 10 || avgConfidence >= 90) return true
+
+  // No eligible personas remain
+  const anyEligible = [0, 1, 2].some(i =>
+    personaConcerns[i].some(c => !c.covered && !c.resolved) &&
+    questionsPerPersona[i] < MAX_QUESTIONS_PER_PERSONA
+  )
+  if (!anyEligible) return true
+
+  return false
+}
+
+// ─── Component ────────────────────────────────────────────────────────────────
+
+export function BoardroomPhase({
+  initialConfidence,
   onConfidenceChange,
   onGameEnd,
   gameData
@@ -23,60 +124,122 @@ export function BoardroomPhase({
     { name: 'Loading...', role: '...' },
     { name: 'Loading...', role: '...' },
     { name: 'Loading...', role: '...' }
-  ];
+  ]
 
-  const getInitialConfidence = (index: number) => {
-    return judges[index]?.initial_confidence !== undefined 
-      ? judges[index].initial_confidence 
-      : initialConfidence;
-  };
+  const getInitialConfidence = (index: number) =>
+    judges[index]?.initial_confidence !== undefined
+      ? judges[index].initial_confidence
+      : initialConfidence
 
+  // ── Core game state ────────────────────────────────────────────────────────
   const [confidences, setConfidences] = useState([
-    getInitialConfidence(0), 
-    getInitialConfidence(1), 
+    getInitialConfidence(0),
+    getInitialConfidence(1),
     getInitialConfidence(2)
-  ]);
+  ])
   const [previousConfidences, setPreviousConfidences] = useState([
-    getInitialConfidence(0), 
-    getInitialConfidence(1), 
+    getInitialConfidence(0),
+    getInitialConfidence(1),
     getInitialConfidence(2)
-  ]);
-  const [activeJudge, setActiveJudge] = useState(1);
-  const [emotions, setEmotions] = useState<[JudgeEmotion, JudgeEmotion, JudgeEmotion]>(['neutral', 'neutral', 'neutral']);
-  const [dialogueIndex, setDialogueIndex] = useState(0)
+  ])
+  const [activeJudge, setActiveJudge] = useState(1)
+  const [emotions, setEmotions] = useState<[JudgeEmotion, JudgeEmotion, JudgeEmotion]>(['neutral', 'neutral', 'neutral'])
   const [currentDialogue, setCurrentDialogue] = useState('')
   const [turnCount, setTurnCount] = useState(0)
   const [chatHistory, setChatHistory] = useState<{ role: string, content: string }[]>([])
-  const MAX_TURNS = 6;
-
   const [isEvaluating, setIsEvaluating] = useState(false)
   const [meetingContext, setMeetingContext] = useState(gameData?.context || '')
 
-  const dialogues = gameData?.questions || []
+  // ── Concern-driven orchestration state ────────────────────────────────────
+  const [personaConcerns, setPersonaConcerns] = useState<Concern[][]>(() =>
+    [0, 1, 2].map(i =>
+      (gameData?.personas[i]?.concerns || []).map((c: any) => ({
+        ...c,
+        covered: false,
+        resolved: false,
+      }))
+    )
+  )
+  const [questionsPerPersona, setQuestionsPerPersona] = useState([0, 0, 0])
 
+  // ── Per-turn log for PDF report ────────────────────────────────────────────
+  const [turnLog, setTurnLog] = useState<{
+    judgeName: string
+    question: string
+    response: string
+    scoreDelta: number
+    feedback: string
+  }[]>([])
+
+  // ── Typewriter + TTS state ─────────────────────────────────────────────────
+  const [displayedText, setDisplayedText] = useState('')
+  const [isDialogueComplete, setIsDialogueComplete] = useState(false)
+  const audioRef = useRef<HTMLAudioElement | null>(null)
+  const hasInitializedRef = useRef(false)
+
+  // ── Mount: generate first question via concern-driven selection ────────────
   useEffect(() => {
-    if (dialogues.length > 0) {
-      const firstDialogue = dialogues[0]
-      setActiveJudge(firstDialogue.judge)
-      setCurrentDialogue(firstDialogue.text)
-    }
-  }, [dialogues])
+    if (!gameData || hasInitializedRef.current) return
+    hasInitializedRef.current = true
 
+    const initialConcerns: Concern[][] = [0, 1, 2].map(i =>
+      (gameData.personas[i]?.concerns || []).map((c: any) => ({
+        ...c,
+        covered: false,
+        resolved: false,
+      }))
+    )
+    const initialConfs = [getInitialConfidence(0), getInitialConfidence(1), getInitialConfidence(2)]
+    const firstIdx = selectNextPersona(initialConfs, [0, 0, 0], initialConcerns)
+    const firstConcern = getActiveConcern(initialConcerns[firstIdx])
+
+    if (!firstConcern) return
+
+    setActiveJudge(firstIdx)
+    setIsEvaluating(true)
+
+    const firstJudge = judges[firstIdx]
+    fetch('/api/question', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        context: gameData.context || '',
+        judgeName: firstJudge.name,
+        judgeRole: firstJudge.role,
+        personaPrompt: firstJudge.evaluationPrompt,
+        chatHistory: [],
+        activeConcern: { id: firstConcern.id, text: firstConcern.text },
+        coveredConcernTexts: []
+      })
+    })
+      .then(r => r.json())
+      .then(result => {
+        setCurrentDialogue(result?.data?.question || `Let's discuss: ${firstConcern.text}`)
+        setIsEvaluating(false)
+      })
+      .catch(() => {
+        setCurrentDialogue(`Let's begin. ${firstConcern.text}`)
+        setIsEvaluating(false)
+      })
+  }, [gameData]) // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Response handler ───────────────────────────────────────────────────────
   const handleResponse = useCallback(async (response: string) => {
-    if (isEvaluating) return;
-    setIsEvaluating(true);
+    if (isEvaluating) return
+    setIsEvaluating(true)
 
     try {
-      const currentJudge = judges[activeJudge];
+      const currentJudge = judges[activeJudge]
+      const activeConcern = getActiveConcern(personaConcerns[activeJudge])
 
       const newInteraction = [
         { role: `${currentJudge.name} (${currentJudge.role})`, content: currentDialogue },
         { role: 'Founder', content: response }
-      ];
-      const updatedHistory = [...chatHistory, ...newInteraction];
-      setChatHistory(updatedHistory);
+      ]
+      const updatedHistory = [...chatHistory, ...newInteraction]
+      setChatHistory(updatedHistory)
 
-      // STEP 1: Evaluate Answer
+      // STEP 1: Evaluate answer
       const evaluateRes = await fetch('/api/evaluate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -87,46 +250,140 @@ export function BoardroomPhase({
           judgeName: currentJudge.name,
           judgeRole: currentJudge.role,
           personaPrompt: currentJudge.evaluationPrompt,
-          chatHistory: updatedHistory
+          chatHistory: updatedHistory,
+          activeConcernId: activeConcern?.id ?? null,
+          activePersonaIndex: activeJudge,
+          allPersonaConcerns: personaConcerns,
+          turnCount
         })
-      });
+      })
 
-      const evaluateResult = await evaluateRes.json();
-      const scoreDelta = evaluateResult?.data?.scoreDelta || 0;
-      let emotion = evaluateResult?.data?.emotion || 'neutral';
-      if (!['smile', 'neutral', 'worse'].includes(emotion)) emotion = 'neutral';
-      const newContext = evaluateResult?.data?.updatedContext || meetingContext;
-      setMeetingContext(newContext);
+      const evaluateResult = await evaluateRes.json()
+      const scoreDelta = evaluateResult?.data?.scoreDelta || 0
+      let emotion = evaluateResult?.data?.emotion || 'neutral'
+      if (!['smile', 'neutral', 'worse'].includes(emotion)) emotion = 'neutral'
+      const newContext = evaluateResult?.data?.updatedContext || meetingContext
+      const resolvedConcernIds: string[] = evaluateResult?.data?.resolvedConcernIds || []
+      const crossResolvedConcerns: { personaIndex: number; concernId: string }[] =
+        evaluateResult?.data?.crossResolvedConcerns || []
+      const newConcernText: string | null = evaluateResult?.data?.newConcern ?? null
+      setMeetingContext(newContext)
 
-      // Update confidence for active judge
+      // Log this turn for the PDF report
+      setTurnLog(prev => [...prev, {
+        judgeName: `${currentJudge.name} (${currentJudge.role})`,
+        question: currentDialogue,
+        response,
+        scoreDelta,
+        feedback: evaluateResult?.data?.reasoning || ''
+      }])
+
+      // STEP 2: Update confidences
       setPreviousConfidences([...confidences])
       const newConfidences = [...confidences]
       newConfidences[activeJudge] = Math.max(0, Math.min(100, newConfidences[activeJudge] + scoreDelta))
       setConfidences(newConfidences)
-      
+
       const avgConfidence = Math.round(newConfidences.reduce((a, b) => a + b, 0) / 3)
       onConfidenceChange(avgConfidence)
 
-      // Update emotions
+      // STEP 3: Update emotions
       const newEmotions: [JudgeEmotion, JudgeEmotion, JudgeEmotion] = [...emotions]
       newEmotions[activeJudge] = emotion as JudgeEmotion
       setEmotions(newEmotions)
 
-      // Check for game end
+      // STEP 4: Update concerns
       const nextTurn = turnCount + 1
+      const newPersonaConcerns = personaConcerns.map((concerns, pIdx) =>
+        concerns.map(c => {
+          // Mark active concern as covered (question was asked about it)
+          if (pIdx === activeJudge && c.id === activeConcern?.id) {
+            return { ...c, covered: true }
+          }
+          // Mark as resolved if LLM says so (current persona)
+          if (resolvedConcernIds.includes(c.id)) {
+            return { ...c, resolved: true }
+          }
+          // Cross-persona resolutions
+          const crossMatch = crossResolvedConcerns.find(
+            cr => cr.personaIndex === pIdx && cr.concernId === c.id
+          )
+          if (crossMatch) {
+            return { ...c, resolved: true }
+          }
+          return c
+        })
+      )
+
+      // STEP 5: Optionally add new concern (gated)
+      const activePersonaConcerns = newPersonaConcerns[activeJudge]
+      const canAddConcern =
+        newConcernText !== null &&
+        activePersonaConcerns.length < MAX_TOTAL_CONCERNS_PER_PERSONA &&
+        nextTurn < MAX_TURNS - 2
+
+      if (canAddConcern && newConcernText) {
+        const newConcernId = `p${activeJudge}_c${activePersonaConcerns.length}`
+        newPersonaConcerns[activeJudge] = [
+          ...activePersonaConcerns,
+          { id: newConcernId, text: newConcernText, covered: false, resolved: false }
+        ]
+      }
+
+      setPersonaConcerns(newPersonaConcerns)
+
+      // STEP 6: Update per-persona question counter
+      const newQPP = [...questionsPerPersona]
+      newQPP[activeJudge] = newQPP[activeJudge] + 1
+      setQuestionsPerPersona(newQPP)
       setTurnCount(nextTurn)
-      if (nextTurn >= MAX_TURNS || avgConfidence <= 10 || avgConfidence >= 90) {
-        setTimeout(() => onGameEnd(avgConfidence, { chatHistory: updatedHistory, meetingContext: newContext, judges, confidences: newConfidences }), 1500)
+
+      // STEP 7: Check for game end
+      if (checkGameEnd(nextTurn, avgConfidence, newPersonaConcerns, newQPP)) {
+        setTimeout(() => onGameEnd(avgConfidence, {
+          chatHistory: updatedHistory,
+          meetingContext: newContext,
+          judges,
+          confidences: newConfidences,
+          personaConcerns: newPersonaConcerns,
+          turnLog: [...turnLog, {
+            judgeName: `${currentJudge.name} (${currentJudge.role})`,
+            question: currentDialogue,
+            response,
+            scoreDelta,
+            feedback: evaluateResult?.data?.reasoning || ''
+          }]
+        }), 1500)
         return
       }
 
-      // Determine next targeted judge and planned question from the initial PDF generation
-      const targetDialogue = dialogues[nextTurn];
-      const nextJudgeIndex = targetDialogue?.judge !== undefined ? targetDialogue.judge : (activeJudge + 1) % 3;
-      const nextJudge = judges[nextJudgeIndex];
-      const plannedQuestion = targetDialogue?.text || null;
+      // STEP 8: Select next persona + concern
+      const nextPersonaIndex = selectNextPersona(newConfidences, newQPP, newPersonaConcerns, activeJudge)
+      const nextJudge = judges[nextPersonaIndex]
+      const nextActiveConcern = getActiveConcern(newPersonaConcerns[nextPersonaIndex])
 
-      // STEP 2: Generate Next Question orchestrating the proceeding persona
+      if (!nextActiveConcern) {
+        // Defensive: shouldn't happen if checkGameEnd passed, but end gracefully
+        setTimeout(() => onGameEnd(avgConfidence, {
+          chatHistory: updatedHistory,
+          meetingContext: newContext,
+          judges,
+          confidences: newConfidences,
+          personaConcerns: newPersonaConcerns,
+          turnLog: [...turnLog, {
+            judgeName: `${currentJudge.name} (${currentJudge.role})`,
+            question: currentDialogue,
+            response,
+            scoreDelta,
+            feedback: evaluateResult?.data?.reasoning || ''
+          }]
+        }), 1500)
+        return
+      }
+
+      const coveredConcernTexts = buildCoveredConcernTexts(newPersonaConcerns)
+
+      // STEP 9: Generate next question
       const questionRes = await fetch('/api/question', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -136,39 +393,37 @@ export function BoardroomPhase({
           judgeRole: nextJudge.role,
           personaPrompt: nextJudge.evaluationPrompt,
           chatHistory: updatedHistory,
-          plannedQuestion: plannedQuestion
+          activeConcern: { id: nextActiveConcern.id, text: nextActiveConcern.text },
+          coveredConcernTexts
         })
-      });
+      })
 
-      const questionResult = await questionRes.json();
-      const nextQuestion = questionResult?.data?.question || 'Could you provide more specifics on that?';
+      const questionResult = await questionRes.json()
+      const nextQuestion = questionResult?.data?.question || `Could you elaborate on: ${nextActiveConcern.text}`
 
-      // Next dialogue after delay
       setTimeout(() => {
-        setActiveJudge(nextJudgeIndex)
+        setActiveJudge(nextPersonaIndex)
         setCurrentDialogue(nextQuestion)
-        
-        // Reset emotions to neutral
         setEmotions(['neutral', 'neutral', 'neutral'])
-        setIsEvaluating(false);
+        setIsEvaluating(false)
       }, 3000)
 
     } catch (e) {
-      console.error(e);
-      setIsEvaluating(false);
+      console.error(e)
+      setIsEvaluating(false)
     }
-  }, [confidences, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd, currentDialogue, gameData, isEvaluating, chatHistory, judges, meetingContext])
+  }, [
+    confidences, emotions, activeJudge, turnCount, onConfidenceChange, onGameEnd,
+    currentDialogue, isEvaluating, chatHistory, judges, meetingContext,
+    personaConcerns, questionsPerPersona, turnLog
+  ])
 
-  const [displayedText, setDisplayedText] = useState('')
-  const [isDialogueComplete, setIsDialogueComplete] = useState(false)
-  const audioRef = useRef<HTMLAudioElement | null>(null)
-
+  // ── TTS ────────────────────────────────────────────────────────────────────
   const speakDialogue = useCallback(async (text: string, judgeIndex: number) => {
-    // Premium ElevenLabs Voice ID Mapping
     const voiceIds = [
-      'EXAVITQu4vr4xnSDxMaL', // Persona 0: Sarah (Soft, Professional Female)
-      'JBFqnCBsd6RMkjVDRZzb', // Persona 1: George (Deep, Steady Male - from docs example)
-      'TX3LPaxmHKxFdv7VOQHJ', // Persona 2: Liam (Articulate, Young Male)
+      'EXAVITQu4vr4xnSDxMaL',
+      'JBFqnCBsd6RMkjVDRZzb',
+      'TX3LPaxmHKxFdv7VOQHJ',
     ]
     const selectedVoiceId = voiceIds[judgeIndex] || voiceIds[0]
 
@@ -196,18 +451,17 @@ export function BoardroomPhase({
         audioRef.current = audio
       }
     } catch (err) {
-      console.error("ElevenLabs TTS Streaming Error:", err)
+      console.error('ElevenLabs TTS Streaming Error:', err)
     }
   }, [])
 
-  // Typewriter effect & Voice Trigger
+  // ── Typewriter effect + TTS trigger ───────────────────────────────────────
   useEffect(() => {
     setDisplayedText('')
     setIsDialogueComplete(false)
-    
+
     if (!currentDialogue) return
 
-    // Trigger explicit TTS play!
     speakDialogue(currentDialogue, activeJudge)
 
     let index = 0
@@ -224,10 +478,15 @@ export function BoardroomPhase({
     return () => clearInterval(interval)
   }, [currentDialogue, activeJudge, speakDialogue])
 
+  // ── Derived display values ─────────────────────────────────────────────────
+  const doneConcerns = personaConcerns.flat().filter(c => c.covered || c.resolved).length
+  const totalConcerns = personaConcerns.flat().length
+
+  // ── Layout ─────────────────────────────────────────────────────────────────
   const judgePositions = [
-    { left: '10%', bottom: '22%', zIndex: 10 }, 
+    { left: '10%', bottom: '22%', zIndex: 10 },
     { left: '50%', transform: 'translateX(-50%)', bottom: '22%', zIndex: 5 },
-    { right: '10%', bottom: '22%', zIndex: 10 } 
+    { right: '10%', bottom: '22%', zIndex: 10 }
   ]
 
   return (
@@ -238,22 +497,20 @@ export function BoardroomPhase({
       className="fixed inset-0 z-10"
     >
       {/* Background */}
-      <div 
+      <div
         className="absolute inset-0 bg-cover bg-center bg-no-repeat"
-        style={{
-          backgroundImage: `url('/room.png')`,
-        }}
+        style={{ backgroundImage: `url('/room.png')` }}
       />
-      
-      {/* Overlay for better contrast */}
+
+      {/* Overlay */}
       <div className="absolute inset-0 bg-gradient-to-b from-[#001E44]/20 via-transparent to-black/80" />
 
-      {/* Judges absolutely positioned */}
+      {/* Judges */}
       <div className="absolute inset-0 w-full h-full pointer-events-none">
         {judges.map((judge, index) => (
-          <div 
-            key={index} 
-            className="absolute" 
+          <div
+            key={index}
+            className="absolute"
             style={judgePositions[index]}
           >
             <Judge
@@ -271,20 +528,41 @@ export function BoardroomPhase({
         ))}
       </div>
 
-      {/* Dialogue HUD Terminal */}
+      {/* Dialogue HUD */}
       <DialogueHUD
         onRespond={handleResponse}
         isEvaluating={isEvaluating}
         canRespond={isDialogueComplete}
       />
 
-      {/* Turn indicator */}
+      {/* Turn + concern progress indicator */}
       <div className="absolute top-4 right-4 z-30">
         <div className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30">
           <span className="font-mono text-xs text-[#A0AEC0]">
-            QUESTION {turnCount + 1}/{MAX_TURNS}
+            Q {turnCount + 1}/{MAX_TURNS}&nbsp;&nbsp;|&nbsp;&nbsp;{doneConcerns}/{totalConcerns} CONCERNS
           </span>
         </div>
+      </div>
+
+      {/* End Discussion button */}
+      <div className="absolute top-4 left-4 z-30">
+        <button
+          onClick={() => {
+            const avg = Math.round(confidences.reduce((a, b) => a + b, 0) / 3)
+            onGameEnd(avg, {
+              chatHistory,
+              meetingContext,
+              judges,
+              confidences,
+              personaConcerns,
+              turnLog
+            })
+          }}
+          disabled={isEvaluating}
+          className="glass rounded-lg px-4 py-2 border border-[#4A5568]/30 font-mono text-xs text-[#A0AEC0] hover:border-red-500/50 hover:text-red-400 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+        >
+          END DISCUSSION
+        </button>
       </div>
     </motion.div>
   )

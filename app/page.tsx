@@ -14,7 +14,7 @@ export default function ShadowCommittee() {
   const [confidence, setConfidence] = useState(50)
   const [finalScore, setFinalScore] = useState(50)
   const [reportData, setReportData] = useState<any>(null)
-  const [gameData, setGameData] = useState<{ personas: any[], questions: any[], context: string, outcomes?: any } | null>(null)
+  const [gameData, setGameData] = useState<{ personas: any[], context: string, outcomes?: any } | null>(null)
   const [isTransitionComplete, setIsTransitionComplete] = useState(false)
 
   useEffect(() => {
@@ -39,7 +39,6 @@ export default function ShadowCommittee() {
       if (result.success && result.data) {
         setGameData({
           personas: result.data.personas,
-          questions: result.data.questions,
           outcomes: result.data.outcomes,
           context
         })
