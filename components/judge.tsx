@@ -1,6 +1,7 @@
 "use client"
 
-import { motion } from 'framer-motion'
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
 import type { JudgeEmotion } from '@/hooks/use-game-state'
 
 import { ConfidenceMeter } from './confidence-meter'
@@ -14,6 +15,7 @@ interface JudgeProps {
   confidence: number
   previousConfidence: number
   dialogue?: string | null
+  personaPrompt?: string
 }
 
 const judgeImages = {
@@ -34,9 +36,10 @@ const judgeImages = {
   },
 } as const
 
-export function Judge({ index, emotion, isActive, name, role, confidence, previousConfidence, dialogue }: JudgeProps) {
+export function Judge({ index, emotion, isActive, name, role, confidence, previousConfidence, dialogue, personaPrompt }: JudgeProps) {
   const images = judgeImages[index as keyof typeof judgeImages]
   const currentImage = images[emotion]
+  const [isHovered, setIsHovered] = useState(false)
 
   // Dynamic positioning for Speech Bubbles so they grow inward towards the screen center
   const getBubblePositionClasses = () => {
@@ -51,6 +54,20 @@ export function Judge({ index, emotion, isActive, name, role, confidence, previo
     return "before:left-1/2 before:-translate-x-1/2"
   }
 
+  // Tooltip positioning — centered directly over the persona image
+  const getTooltipPositionClasses = () => {
+    return "left-1/2 -translate-x-1/2 top-1/2 -translate-y-1/2"
+  }
+
+  const getConfidenceLabel = () => {
+    if (confidence >= 75) return { text: 'Confident', color: 'text-emerald-400' }
+    if (confidence >= 50) return { text: 'Neutral', color: 'text-amber-400' }
+    if (confidence >= 30) return { text: 'Skeptical', color: 'text-orange-400' }
+    return { text: 'Unconvinced', color: 'text-red-400' }
+  }
+
+  const confidenceLabel = getConfidenceLabel()
+
   return (
     <motion.div
       className="relative flex flex-col items-center pointer-events-auto"
@@ -58,6 +75,8 @@ export function Judge({ index, emotion, isActive, name, role, confidence, previo
         zIndex: isActive ? 50 : 10,
       }}
       transition={{ duration: 0.4, ease: 'easeOut' }}
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
     >
       {/* Speech Bubble */}
       {isActive && dialogue && (
@@ -72,9 +91,93 @@ export function Judge({ index, emotion, isActive, name, role, confidence, previo
         </motion.div>
       )}
 
+      {/* Hover Tooltip Card */}
+      <AnimatePresence>
+        {isHovered && name !== 'Loading...' && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.9 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.9 }}
+            transition={{ duration: 0.2 }}
+            className={`absolute ${getTooltipPositionClasses()} z-[60] w-[20rem] pointer-events-none`}
+          >
+            <div className="bg-[#0a1628]/95 backdrop-blur-xl rounded-xl border border-[#FFC627]/30 shadow-2xl shadow-black/50 overflow-hidden">
+              {/* Header */}
+              <div className="bg-gradient-to-r from-[#FFC627]/20 to-[#001E44] px-4 py-3 border-b border-[#FFC627]/20">
+                <p className="font-serif text-[14px] font-bold text-[#FFC627]">{name}</p>
+                <p className="font-mono text-[10px] text-[#A0AEC0] uppercase tracking-widest">{role}</p>
+              </div>
+
+              {/* Stats */}
+              <div className="px-4 py-3 space-y-3">
+                {/* Confidence */}
+                <div>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="font-mono text-[10px] text-[#718096] uppercase tracking-wider">Confidence Level</span>
+                    <span className={`font-mono text-[11px] font-bold ${confidenceLabel.color}`}>{confidence}%</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-[#1a2744] rounded-full overflow-hidden">
+                    <motion.div
+                      className="h-full rounded-full"
+                      initial={{ width: 0 }}
+                      animate={{ width: `${confidence}%` }}
+                      transition={{ duration: 0.5 }}
+                      style={{
+                        background: confidence >= 60 
+                          ? 'linear-gradient(90deg, #10B981, #34D399)' 
+                          : confidence >= 40 
+                            ? 'linear-gradient(90deg, #F59E0B, #FBBF24)'
+                            : 'linear-gradient(90deg, #EF4444, #F87171)'
+                      }}
+                    />
+                  </div>
+                  <p className={`font-mono text-[10px] mt-1 ${confidenceLabel.color}`}>
+                    Mood: {confidenceLabel.text}
+                  </p>
+                </div>
+
+                {/* Divider */}
+                <div className="w-full h-px bg-gradient-to-r from-transparent via-[#4A5568]/50 to-transparent" />
+
+                {/* Thinking / Guardrails as bullet points */}
+                {personaPrompt && (
+                  <div>
+                    <span className="font-mono text-[10px] text-[#718096] uppercase tracking-wider flex items-center gap-1">
+                      🧠 Thinking & Guardrails
+                    </span>
+                    <ul className="mt-2 space-y-1.5 max-h-[12rem] overflow-y-auto pr-1 scrollbar-thin">
+                      {personaPrompt
+                        .split(/(?<=[.!?])\s+/)
+                        .filter(s => s.trim().length > 5)
+                        .map((sentence, i) => (
+                          <li key={i} className="flex items-start gap-2">
+                            <span className="text-[#FFC627] text-[8px] mt-[5px] flex-shrink-0">●</span>
+                            <span className="font-mono text-[11px] text-[#CBD5E0] leading-relaxed">
+                              {sentence.trim()}
+                            </span>
+                          </li>
+                        ))
+                      }
+                    </ul>
+                  </div>
+                )}
+
+                {/* Status Indicator */}
+                <div className="flex items-center gap-2 pt-1">
+                  <div className={`w-2 h-2 rounded-full ${isActive ? 'bg-[#FFC627] animate-pulse' : 'bg-[#4A5568]'}`} />
+                  <span className="font-mono text-[10px] text-[#718096]">
+                    {isActive ? 'Currently Speaking' : 'Observing'}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {/* Judge Image Container */}
       <motion.div
-        className="relative"
+        className="relative cursor-pointer"
         animate={{
           filter: isActive && name !== 'Loading...' ? 'drop-shadow(0 0 30px rgba(255,198,39,0.5))' : 'drop-shadow(0 0 10px rgba(0,0,0,0.5))',
         }}
@@ -126,3 +229,4 @@ export function Judge({ index, emotion, isActive, name, role, confidence, previo
     </motion.div>
   )
 }
+
